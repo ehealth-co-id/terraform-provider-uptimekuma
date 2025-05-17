@@ -12,6 +12,13 @@ This Terraform provider allows you to manage [Uptime Kuma](https://github.com/lo
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
 - [Go](https://golang.org/doc/install) >= 1.23
 - Access to an Uptime Kuma instance (self-hosted or hosted)
+- Uptime Kuma Web API adapter (see setup guide below)
+
+## Setup Guide for Uptime Kuma Web API
+
+Uptime Kuma uses WebSocket for its API rather than a traditional REST API. This provider requires the [Uptime Kuma Web API adapter](https://github.com/MedAziz11/Uptime-Kuma-Web-API) to bridge between standard REST calls and Uptime Kuma's WebSocket API.
+
+For a complete setup guide, refer to: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
 
 ## Building The Provider
 
@@ -37,10 +44,10 @@ terraform {
 }
 
 provider "uptimekuma" {
-  base_url = "http://localhost:3001"  # Your Uptime Kuma instance URL
-  username = "admin"                  # Username for authentication
-  password = "password"               # Password for authentication
-  # insecure_https = true             # Optional: Skip TLS certificate verification
+  base_url = "https://localhost/api/v1/"  # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
+  username = "admin"                      # Username for authentication
+  password = "password"                   # Password for authentication
+  # insecure_https = true                 # Optional: Skip TLS certificate verification
 }
 
 # Create an HTTP monitor
