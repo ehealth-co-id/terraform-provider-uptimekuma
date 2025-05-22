@@ -239,7 +239,7 @@ Acceptance tests create real resources on your Uptime Kuma instance. These requi
 ```shell
 # Set required environment variables
 export TF_ACC=1
-export UPTIMEKUMA_BASE_URL="http://localhost:3001"
+export UPTIMEKUMA_BASE_URL="https://localhost/api/v1"
 export UPTIMEKUMA_USERNAME="admin"
 export UPTIMEKUMA_PASSWORD="mypassword"
 
