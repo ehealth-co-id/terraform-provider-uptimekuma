@@ -32,10 +32,11 @@ type UptimeKumaProvider struct {
 
 // UptimeKumaProviderModel describes the provider data model.
 type UptimeKumaProviderModel struct {
-	BaseURL       types.String `tfsdk:"base_url"`
-	Username      types.String `tfsdk:"username"`
-	Password      types.String `tfsdk:"password"`
-	InsecureHTTPS types.Bool   `tfsdk:"insecure_https"`
+	BaseURL        types.String `tfsdk:"base_url"`
+	Username       types.String `tfsdk:"username"`
+	Password       types.String `tfsdk:"password"`
+	InsecureHTTPS  types.Bool   `tfsdk:"insecure_https"`
+	DefaultHeaders types.Map    `tfsdk:"default_headers"`
 }
 
 func (p *UptimeKumaProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -64,6 +65,12 @@ func (p *UptimeKumaProvider) Schema(ctx context.Context, req provider.SchemaRequ
 				MarkdownDescription: "Skip TLS certificate verification",
 				Optional:            true,
 			},
+			"default_headers": schema.MapAttribute{
+				MarkdownDescription: "Default HTTP headers to include with every request (e.g., for Cloudflare).",
+				Optional:            true,
+				Sensitive:           true,
+				ElementType:         types.StringType,
+			},
 		},
 	}
 }
@@ -86,11 +93,21 @@ func (p *UptimeKumaProvider) Configure(ctx context.Context, req provider.Configu
 		insecureHTTPS = data.InsecureHTTPS.ValueBool()
 	}
 
+	defaultHeaders := map[string]string{}
+	if !data.DefaultHeaders.IsNull() && !data.DefaultHeaders.IsUnknown() {
+		for k, v := range data.DefaultHeaders.Elements() {
+			if vStr, ok := v.(types.String); ok && !vStr.IsNull() && !vStr.IsUnknown() {
+				defaultHeaders[k] = vStr.ValueString()
+			}
+		}
+	}
+
 	config := &client.Config{
-		BaseURL:       baseURL,
-		Username:      username,
-		Password:      password,
-		InsecureHTTPS: insecureHTTPS,
+		BaseURL:        baseURL,
+		Username:       username,
+		Password:       password,
+		InsecureHTTPS:  insecureHTTPS,
+		DefaultHeaders: defaultHeaders,
 	}
 
 	// Create client
