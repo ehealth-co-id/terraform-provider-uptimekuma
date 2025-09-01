@@ -77,6 +77,11 @@ type Monitor struct {
 	DockerHost          int           `json:"docker_host,omitempty"`
 }
 
+type MonitorCreateResponse struct {
+	Msg                 string        `json:"msg,omitempty"`
+	MonitorID           int           `json:"monitorID,omitempty"`
+}
+
 // GetMonitors retrieves all monitors
 func (c *Client) GetMonitors(ctx context.Context) ([]Monitor, error) {
 	var result []Monitor
@@ -97,13 +102,13 @@ func (c *Client) GetMonitor(ctx context.Context, id int) (*Monitor, error) {
 }
 
 // CreateMonitor creates a new monitor
-func (c *Client) CreateMonitor(ctx context.Context, monitor *Monitor) (*Monitor, error) {
+func (c *Client) CreateMonitor(ctx context.Context, monitor *Monitor) (*MonitorCreateResponse, error) {
 	data, err := json.Marshal(monitor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal monitor: %w", err)
 	}
 
-	var result Monitor
+	var result MonitorCreateResponse
 	if err := c.Post(ctx, "/monitors", bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to create monitor: %w", err)
 	}
