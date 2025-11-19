@@ -52,9 +52,12 @@ type MonitorResourceModel struct {
 	Body          types.String `tfsdk:"body"`
 	Headers       types.String `tfsdk:"headers"`
 	AuthMethod    types.String `tfsdk:"auth_method"`
-	BasicAuthUser types.String `tfsdk:"basic_auth_user"`
-	BasicAuthPass types.String `tfsdk:"basic_auth_pass"`
-	Keyword       types.String `tfsdk:"keyword"`
+	BasicAuthUser            types.String `tfsdk:"basic_auth_user"`
+	BasicAuthPass            types.String `tfsdk:"basic_auth_pass"`
+	Keyword                  types.String `tfsdk:"keyword"`
+	NotificationIDList       types.List   `tfsdk:"notification_id_list"`
+	AcceptedStatusCodes      types.List   `tfsdk:"accepted_status_codes"`
+	DatabaseConnectionString types.String `tfsdk:"database_connection_string"`
 }
 
 func (r *MonitorResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -158,6 +161,21 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 				MarkdownDescription: "Keyword to search for in response",
 				Optional:            true,
 			},
+			"notification_id_list": schema.ListAttribute{
+				ElementType:         types.Int64Type,
+				MarkdownDescription: "List of notification IDs to trigger when monitor status changes",
+				Optional:            true,
+			},
+			"accepted_status_codes": schema.ListAttribute{
+				ElementType:         types.Int64Type,
+				MarkdownDescription: "List of accepted HTTP status codes (e.g., [200, 201, 204]). Defaults to all 2xx codes if not specified.",
+				Optional:            true,
+			},
+			"database_connection_string": schema.StringAttribute{
+				MarkdownDescription: "Database connection string for database monitors (postgres, mysql, mongodb, etc.)",
+				Optional:            true,
+				Sensitive:           true,
+			},
 		},
 	}
 }
@@ -249,6 +267,36 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		monitor.Keyword = data.Keyword.ValueString()
 	}
 
+	// Handle NotificationIDList
+	if !data.NotificationIDList.IsNull() && !data.NotificationIDList.IsUnknown() {
+		var notifIDs []int64
+		diags := data.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
+		if !diags.HasError() {
+			monitor.NotificationIDList = make([]interface{}, len(notifIDs))
+			for i, id := range notifIDs {
+				monitor.NotificationIDList[i] = int(id)
+			}
+		}
+	}
+
+	// Handle AcceptedStatusCodes
+	if !data.AcceptedStatusCodes.IsNull() && !data.AcceptedStatusCodes.IsUnknown() {
+		var codes []int64
+		diags := data.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
+		if !diags.HasError() {
+			monitor.AcceptedStatusCodes = make([]interface{}, len(codes))
+			for i, code := range codes {
+				monitor.AcceptedStatusCodes[i] = int(code)
+			}
+		}
+	}
+
+	// Handle DatabaseConnectionString (for Postgres/MySQL/MongoDB/etc)
+	if !data.DatabaseConnectionString.IsNull() {
+		connStr := data.DatabaseConnectionString.ValueString()
+		monitor.Hostname = connStr
+	}
+
 	// Create the monitor
 	tflog.Info(ctx, "Creating monitor", map[string]interface{}{
 		"name": monitor.Name,
@@ -311,6 +359,48 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 	data.BasicAuthUser = types.StringValue(monitor.BasicAuthUser)
 	data.BasicAuthPass = types.StringValue(monitor.BasicAuthPass)
 	data.Keyword = types.StringValue(monitor.Keyword)
+
+	// Read NotificationIDList
+	if monitor.NotificationIDList != nil && len(monitor.NotificationIDList) > 0 {
+		notifIDs := make([]types.Int64, len(monitor.NotificationIDList))
+		for i, v := range monitor.NotificationIDList {
+			switch val := v.(type) {
+			case float64:
+				notifIDs[i] = types.Int64Value(int64(val))
+			case int:
+				notifIDs[i] = types.Int64Value(int64(val))
+			case int64:
+				notifIDs[i] = types.Int64Value(val)
+			}
+		}
+		listVal, diags := types.ListValueFrom(ctx, types.Int64Type, notifIDs)
+		resp.Diagnostics.Append(diags...)
+		data.NotificationIDList = listVal
+	}
+
+	// Read AcceptedStatusCodes
+	if monitor.AcceptedStatusCodes != nil && len(monitor.AcceptedStatusCodes) > 0 {
+		codes := make([]types.Int64, len(monitor.AcceptedStatusCodes))
+		for i, v := range monitor.AcceptedStatusCodes {
+			switch val := v.(type) {
+			case float64:
+				codes[i] = types.Int64Value(int64(val))
+			case int:
+				codes[i] = types.Int64Value(int64(val))
+			case int64:
+				codes[i] = types.Int64Value(val)
+			}
+		}
+		listVal, diags := types.ListValueFrom(ctx, types.Int64Type, codes)
+		resp.Diagnostics.Append(diags...)
+		data.AcceptedStatusCodes = listVal
+	}
+
+	// DatabaseConnectionString - read from hostname for database monitors
+	if monitor.Type == client.MonitorTypePostgres || monitor.Type == client.MonitorTypeMySQL ||
+	   monitor.Type == client.MonitorTypeMongoDB || monitor.Type == client.MonitorTypeSQLServer {
+		data.DatabaseConnectionString = types.StringValue(monitor.Hostname)
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -383,6 +473,36 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	if !data.Keyword.IsNull() {
 		monitor.Keyword = data.Keyword.ValueString()
+	}
+
+	// Handle NotificationIDList
+	if !data.NotificationIDList.IsNull() && !data.NotificationIDList.IsUnknown() {
+		var notifIDs []int64
+		diags := data.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
+		if !diags.HasError() {
+			monitor.NotificationIDList = make([]interface{}, len(notifIDs))
+			for i, id := range notifIDs {
+				monitor.NotificationIDList[i] = int(id)
+			}
+		}
+	}
+
+	// Handle AcceptedStatusCodes
+	if !data.AcceptedStatusCodes.IsNull() && !data.AcceptedStatusCodes.IsUnknown() {
+		var codes []int64
+		diags := data.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
+		if !diags.HasError() {
+			monitor.AcceptedStatusCodes = make([]interface{}, len(codes))
+			for i, code := range codes {
+				monitor.AcceptedStatusCodes[i] = int(code)
+			}
+		}
+	}
+
+	// Handle DatabaseConnectionString (for Postgres/MySQL/MongoDB/etc)
+	if !data.DatabaseConnectionString.IsNull() {
+		connStr := data.DatabaseConnectionString.ValueString()
+		monitor.Hostname = connStr
 	}
 
 	// Update the monitor
