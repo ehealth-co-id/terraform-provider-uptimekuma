@@ -85,7 +85,10 @@ func TestMonitorOperations(t *testing.T) {
 				newMonitor.ID = len(monitors) + 1
 				monitors = append(monitors, newMonitor)
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(newMonitor)
+				json.NewEncoder(w).Encode(MonitorCreateResponse{
+					MonitorID: newMonitor.ID,
+					Msg:       "monitor created",
+				})
 				return
 			}
 		} else if strings.HasPrefix(r.URL.Path, "/monitors/") {
@@ -270,8 +273,15 @@ func TestMonitorOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMonitor failed: %v", err)
 	}
-	if createdMonitor.ID != 3 || createdMonitor.Name != "New Monitor" {
-		t.Errorf("CreateMonitor returned unexpected result: %+v", createdMonitor)
+	if createdMonitor.MonitorID != 3 {
+		t.Errorf("CreateMonitor returned unexpected monitor ID: %+v", createdMonitor)
+	}
+	created, err := client.GetMonitor(ctx, createdMonitor.MonitorID)
+	if err != nil {
+		t.Fatalf("GetMonitor after create failed: %v", err)
+	}
+	if created.Name != "New Monitor" {
+		t.Errorf("Created monitor mismatch: %+v", created)
 	}
 
 	// Test UpdateMonitor
