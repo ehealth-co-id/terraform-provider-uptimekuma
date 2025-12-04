@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright (c) eHealth.co.id as PT Aksara Digital Indonesia
 // SPDX-License-Identifier: MPL-2.0
 
 package main

@@ -4,6 +4,7 @@ schema_version = 1
 project {
   license        = "MPL-2.0"
   copyright_year = 2021
+  copyright_holder = "eHealth.co.id as PT Aksara Digital Indonesia"
 
   header_ignore = [
     # examples used within documentation (prose)
