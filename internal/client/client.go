@@ -12,24 +12,24 @@ import (
 	"time"
 )
 
-// Config holds the configuration for the Uptime Kuma client
+// Config holds the configuration for the Uptime Kuma client.
 type Config struct {
-	BaseURL        string
-	Username       string
-	Password       string
-	Timeout        time.Duration
-	InsecureHTTPS  bool
+	BaseURL          string
+	Username         string
+	Password         string
+	Timeout          time.Duration
+	InsecureHTTPS    bool
 	CustomHTTPClient *http.Client
 }
 
-// Client is the API client for Uptime Kuma
+// Client is the API client for Uptime Kuma.
 type Client struct {
 	config     *Config
 	authClient *AuthClient
 	httpClient *http.Client
 }
 
-// New creates a new Uptime Kuma API client
+// New creates a new Uptime Kuma API client.
 func New(config *Config) (*Client, error) {
 	// Validate config
 	if config.BaseURL == "" {
@@ -71,7 +71,7 @@ func New(config *Config) (*Client, error) {
 	}, nil
 }
 
-// doRequest performs an HTTP request and decodes the response
+// doRequest performs an HTTP request and decodes the response.
 func (c *Client) doRequest(ctx context.Context, method, path string, body io.Reader, result interface{}) error {
 	// Create request
 	url := fmt.Sprintf("%s%s", c.config.BaseURL, path)
@@ -109,27 +109,27 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body io.Rea
 	return nil
 }
 
-// Get performs a GET request
+// Get performs a GET request.
 func (c *Client) Get(ctx context.Context, path string, result interface{}) error {
 	return c.doRequest(ctx, http.MethodGet, path, nil, result)
 }
 
-// Post performs a POST request
+// Post performs a POST request.
 func (c *Client) Post(ctx context.Context, path string, body io.Reader, result interface{}) error {
 	return c.doRequest(ctx, http.MethodPost, path, body, result)
 }
 
-// Put performs a PUT request
+// Put performs a PUT request.
 func (c *Client) Put(ctx context.Context, path string, body io.Reader, result interface{}) error {
 	return c.doRequest(ctx, http.MethodPut, path, body, result)
 }
 
-// Patch performs a PATCH request
+// Patch performs a PATCH request.
 func (c *Client) Patch(ctx context.Context, path string, body io.Reader, result interface{}) error {
 	return c.doRequest(ctx, http.MethodPatch, path, body, result)
 }
 
-// Delete performs a DELETE request
+// Delete performs a DELETE request.
 func (c *Client) Delete(ctx context.Context, path string, result interface{}) error {
 	return c.doRequest(ctx, http.MethodDelete, path, nil, result)
 }

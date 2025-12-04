@@ -10,14 +10,14 @@ import (
 	"fmt"
 )
 
-// Tag represents an Uptime Kuma tag
+// Tag represents an Uptime Kuma tag.
 type Tag struct {
 	ID    int    `json:"id,omitempty"`
 	Name  string `json:"name"`
 	Color string `json:"color"`
 }
 
-// GetTags retrieves all tags
+// GetTags retrieves all tags.
 func (c *Client) GetTags(ctx context.Context) ([]Tag, error) {
 	var result []Tag
 	if err := c.Get(ctx, "/tags", &result); err != nil {
@@ -26,7 +26,7 @@ func (c *Client) GetTags(ctx context.Context) ([]Tag, error) {
 	return result, nil
 }
 
-// GetTag retrieves a specific tag by ID
+// GetTag retrieves a specific tag by ID.
 func (c *Client) GetTag(ctx context.Context, id int) (*Tag, error) {
 	var result Tag
 	path := fmt.Sprintf("/tags/%d", id)
@@ -36,7 +36,7 @@ func (c *Client) GetTag(ctx context.Context, id int) (*Tag, error) {
 	return &result, nil
 }
 
-// CreateTag creates a new tag
+// CreateTag creates a new tag.
 func (c *Client) CreateTag(ctx context.Context, tag *Tag) (*Tag, error) {
 	data, err := json.Marshal(tag)
 	if err != nil {
@@ -50,7 +50,7 @@ func (c *Client) CreateTag(ctx context.Context, tag *Tag) (*Tag, error) {
 	return &result, nil
 }
 
-// DeleteTag deletes a tag
+// DeleteTag deletes a tag.
 func (c *Client) DeleteTag(ctx context.Context, id int) error {
 	path := fmt.Sprintf("/tags/%d", id)
 	if err := c.Delete(ctx, path, nil); err != nil {

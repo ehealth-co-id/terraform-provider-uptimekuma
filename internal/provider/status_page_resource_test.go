@@ -93,11 +93,11 @@ resource "uptimekuma_status_page" "test" {
   theme       = "dark"
   show_tags   = false
 }
-`, 
-	os.Getenv("UPTIMEKUMA_BASE_URL"),
-	os.Getenv("UPTIMEKUMA_USERNAME"),
-	os.Getenv("UPTIMEKUMA_PASSWORD"),
-	slug, title, description)
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		slug, title, description)
 }
 
 func TestAccStatusPageResourceWithGroups(t *testing.T) {
@@ -172,9 +172,9 @@ resource "uptimekuma_status_page" "with_groups" {
     ]
   }
 }
-`, 
-	os.Getenv("UPTIMEKUMA_BASE_URL"),
-	os.Getenv("UPTIMEKUMA_USERNAME"),
-	os.Getenv("UPTIMEKUMA_PASSWORD"),
-	slug, title)
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		slug, title)
 }

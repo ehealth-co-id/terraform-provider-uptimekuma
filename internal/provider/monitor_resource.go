@@ -35,23 +35,23 @@ type MonitorResource struct {
 
 // MonitorResourceModel describes the resource data model.
 type MonitorResourceModel struct {
-	ID            types.Int64  `tfsdk:"id"`
-	Type          types.String `tfsdk:"type"`
-	Name          types.String `tfsdk:"name"`
-	URL           types.String `tfsdk:"url"`
-	Method        types.String `tfsdk:"method"`
-	Hostname      types.String `tfsdk:"hostname"`
-	Port          types.Int64  `tfsdk:"port"`
-	Interval      types.Int64  `tfsdk:"interval"`
-	RetryInterval types.Int64  `tfsdk:"retry_interval"`
-	ResendInterval types.Int64 `tfsdk:"resend_interval"`
-	MaxRetries    types.Int64  `tfsdk:"max_retries"`
-	UpsideDown    types.Bool   `tfsdk:"upside_down"`
-	IgnoreTLS     types.Bool   `tfsdk:"ignore_tls"`
-	MaxRedirects  types.Int64  `tfsdk:"max_redirects"`
-	Body          types.String `tfsdk:"body"`
-	Headers       types.String `tfsdk:"headers"`
-	AuthMethod    types.String `tfsdk:"auth_method"`
+	ID                       types.Int64  `tfsdk:"id"`
+	Type                     types.String `tfsdk:"type"`
+	Name                     types.String `tfsdk:"name"`
+	URL                      types.String `tfsdk:"url"`
+	Method                   types.String `tfsdk:"method"`
+	Hostname                 types.String `tfsdk:"hostname"`
+	Port                     types.Int64  `tfsdk:"port"`
+	Interval                 types.Int64  `tfsdk:"interval"`
+	RetryInterval            types.Int64  `tfsdk:"retry_interval"`
+	ResendInterval           types.Int64  `tfsdk:"resend_interval"`
+	MaxRetries               types.Int64  `tfsdk:"max_retries"`
+	UpsideDown               types.Bool   `tfsdk:"upside_down"`
+	IgnoreTLS                types.Bool   `tfsdk:"ignore_tls"`
+	MaxRedirects             types.Int64  `tfsdk:"max_redirects"`
+	Body                     types.String `tfsdk:"body"`
+	Headers                  types.String `tfsdk:"headers"`
+	AuthMethod               types.String `tfsdk:"auth_method"`
 	BasicAuthUser            types.String `tfsdk:"basic_auth_user"`
 	BasicAuthPass            types.String `tfsdk:"basic_auth_pass"`
 	Keyword                  types.String `tfsdk:"keyword"`
@@ -212,14 +212,14 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// Prepare the API request
 	monitor := &client.Monitor{
-		Type:          client.MonitorType(data.Type.ValueString()),
-		Name:          data.Name.ValueString(),
-		Interval:      int(data.Interval.ValueInt64()),
-		RetryInterval: int(data.RetryInterval.ValueInt64()),
+		Type:           client.MonitorType(data.Type.ValueString()),
+		Name:           data.Name.ValueString(),
+		Interval:       int(data.Interval.ValueInt64()),
+		RetryInterval:  int(data.RetryInterval.ValueInt64()),
 		ResendInterval: int(data.ResendInterval.ValueInt64()),
-		MaxRetries:    int(data.MaxRetries.ValueInt64()),
-		UpsideDown:    data.UpsideDown.ValueBool(),
-		IgnoreTLS:     data.IgnoreTLS.ValueBool(),
+		MaxRetries:     int(data.MaxRetries.ValueInt64()),
+		UpsideDown:     data.UpsideDown.ValueBool(),
+		IgnoreTLS:      data.IgnoreTLS.ValueBool(),
 	}
 
 	// Set optional fields
@@ -361,7 +361,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 	data.Keyword = types.StringValue(monitor.Keyword)
 
 	// Read NotificationIDList
-	if monitor.NotificationIDList != nil && len(monitor.NotificationIDList) > 0 {
+	if len(monitor.NotificationIDList) > 0 {
 		notifIDs := make([]types.Int64, len(monitor.NotificationIDList))
 		for i, v := range monitor.NotificationIDList {
 			switch val := v.(type) {
@@ -379,7 +379,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	// Read AcceptedStatusCodes
-	if monitor.AcceptedStatusCodes != nil && len(monitor.AcceptedStatusCodes) > 0 {
+	if len(monitor.AcceptedStatusCodes) > 0 {
 		codes := make([]types.Int64, len(monitor.AcceptedStatusCodes))
 		for i, v := range monitor.AcceptedStatusCodes {
 			switch val := v.(type) {
@@ -398,7 +398,7 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	// DatabaseConnectionString - read from hostname for database monitors
 	if monitor.Type == client.MonitorTypePostgres || monitor.Type == client.MonitorTypeMySQL ||
-	   monitor.Type == client.MonitorTypeMongoDB || monitor.Type == client.MonitorTypeSQLServer {
+		monitor.Type == client.MonitorTypeMongoDB || monitor.Type == client.MonitorTypeSQLServer {
 		data.DatabaseConnectionString = types.StringValue(monitor.Hostname)
 	}
 
@@ -420,14 +420,14 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	// Prepare the API request
 	monitor := &client.Monitor{
-		Type:          client.MonitorType(data.Type.ValueString()),
-		Name:          data.Name.ValueString(),
-		Interval:      int(data.Interval.ValueInt64()),
-		RetryInterval: int(data.RetryInterval.ValueInt64()),
+		Type:           client.MonitorType(data.Type.ValueString()),
+		Name:           data.Name.ValueString(),
+		Interval:       int(data.Interval.ValueInt64()),
+		RetryInterval:  int(data.RetryInterval.ValueInt64()),
 		ResendInterval: int(data.ResendInterval.ValueInt64()),
-		MaxRetries:    int(data.MaxRetries.ValueInt64()),
-		UpsideDown:    data.UpsideDown.ValueBool(),
-		IgnoreTLS:     data.IgnoreTLS.ValueBool(),
+		MaxRetries:     int(data.MaxRetries.ValueInt64()),
+		UpsideDown:     data.UpsideDown.ValueBool(),
+		IgnoreTLS:      data.IgnoreTLS.ValueBool(),
 	}
 
 	// Set optional fields

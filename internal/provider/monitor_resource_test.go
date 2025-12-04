@@ -85,11 +85,11 @@ resource "uptimekuma_monitor" "test" {
   max_retries = 3
   retry_interval = 30
 }
-`, 
-	os.Getenv("UPTIMEKUMA_BASE_URL"),
-	os.Getenv("UPTIMEKUMA_USERNAME"),
-	os.Getenv("UPTIMEKUMA_PASSWORD"),
-	name, monitorType, url)
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name, monitorType, url)
 }
 
 func TestAccPingMonitorResource(t *testing.T) {
@@ -138,9 +138,9 @@ resource "uptimekuma_monitor" "ping_test" {
   interval = 60
   max_retries = 3
 }
-`, 
-	os.Getenv("UPTIMEKUMA_BASE_URL"),
-	os.Getenv("UPTIMEKUMA_USERNAME"),
-	os.Getenv("UPTIMEKUMA_PASSWORD"),
-	name, hostname)
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name, hostname)
 }

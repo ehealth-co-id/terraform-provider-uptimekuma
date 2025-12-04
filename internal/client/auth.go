@@ -14,13 +14,13 @@ import (
 	"time"
 )
 
-// TokenResponse represents the OAuth token response from the API
+// TokenResponse represents the OAuth token response from the API.
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 }
 
-// AuthClient handles authentication with the Uptime Kuma API
+// AuthClient handles authentication with the Uptime Kuma API.
 type AuthClient struct {
 	baseURL     string
 	username    string
@@ -31,7 +31,7 @@ type AuthClient struct {
 	mutex       sync.RWMutex
 }
 
-// NewAuthClient creates a new auth client
+// NewAuthClient creates a new auth client.
 func NewAuthClient(baseURL, username, password string, httpClient *http.Client) *AuthClient {
 	if httpClient == nil {
 		httpClient = &http.Client{
@@ -47,7 +47,7 @@ func NewAuthClient(baseURL, username, password string, httpClient *http.Client) 
 	}
 }
 
-// GetToken returns a valid authentication token, refreshing if necessary
+// GetToken returns a valid authentication token, refreshing if necessary.
 func (a *AuthClient) GetToken(ctx context.Context) (string, error) {
 	a.mutex.RLock()
 	token := a.token
@@ -62,7 +62,7 @@ func (a *AuthClient) GetToken(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-// refreshToken authenticates and gets a fresh token
+// refreshToken authenticates and gets a fresh token.
 func (a *AuthClient) refreshToken(ctx context.Context) (string, error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
@@ -114,7 +114,7 @@ func (a *AuthClient) refreshToken(ctx context.Context) (string, error) {
 	return a.token, nil
 }
 
-// AddAuthHeader adds the authorization header to an HTTP request
+// AddAuthHeader adds the authorization header to an HTTP request.
 func (a *AuthClient) AddAuthHeader(ctx context.Context, req *http.Request) error {
 	token, err := a.GetToken(ctx)
 	if err != nil {
@@ -125,7 +125,7 @@ func (a *AuthClient) AddAuthHeader(ctx context.Context, req *http.Request) error
 	return nil
 }
 
-// AuthenticatedClient returns an http.Client that automatically handles authentication
+// AuthenticatedClient returns an http.Client that automatically handles authentication.
 func (a *AuthClient) AuthenticatedClient() *http.Client {
 	return &http.Client{
 		Transport: &authTransport{
@@ -136,27 +136,27 @@ func (a *AuthClient) AuthenticatedClient() *http.Client {
 	}
 }
 
-// authTransport is a custom http.RoundTripper that adds authentication headers
+// authTransport is a custom http.RoundTripper that adds authentication headers.
 type authTransport struct {
 	base       http.RoundTripper
 	authClient *AuthClient
 }
 
-// RoundTrip implements the http.RoundTripper interface
+// RoundTrip implements the http.RoundTripper interface.
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone the request to avoid modifying the original
 	req2 := req.Clone(req.Context())
-	
+
 	// Add authentication header
 	if err := t.authClient.AddAuthHeader(req.Context(), req2); err != nil {
 		return nil, err
 	}
-	
+
 	// Use the base transport or default if none provided
 	base := t.base
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	
+
 	return base.RoundTrip(req2)
 }

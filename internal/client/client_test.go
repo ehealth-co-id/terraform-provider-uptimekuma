@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// TestClientAuthentication tests the authentication flow
+// TestClientAuthentication tests the authentication flow.
 func TestClientAuthentication(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func TestClientAuthentication(t *testing.T) {
 	}
 }
 
-// TestInvalidAuthentication tests authentication failure
+// TestInvalidAuthentication tests authentication failure.
 func TestInvalidAuthentication(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func TestInvalidAuthentication(t *testing.T) {
 	}
 }
 
-// TestClientOperations tests all HTTP methods
+// TestClientOperations tests all HTTP methods.
 func TestClientOperations(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -148,9 +148,9 @@ func TestClientOperations(t *testing.T) {
 		// Respond based on the HTTP method
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		
+
 		var data map[string]interface{}
-		
+
 		switch r.Method {
 		case http.MethodGet:
 			data = map[string]interface{}{"method": "GET", "path": r.URL.Path}
@@ -169,7 +169,7 @@ func TestClientOperations(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		
+
 		if err := json.NewEncoder(w).Encode(data); err != nil {
 			t.Fatalf("Failed to encode response: %v", err)
 		}

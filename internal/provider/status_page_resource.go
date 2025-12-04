@@ -42,20 +42,20 @@ type PublicGroupModel struct {
 
 // StatusPageResourceModel describes the resource data model.
 type StatusPageResourceModel struct {
-	ID               types.Int64       `tfsdk:"id"`
-	Slug             types.String      `tfsdk:"slug"`
-	Title            types.String      `tfsdk:"title"`
-	Description      types.String      `tfsdk:"description"`
-	Theme            types.String      `tfsdk:"theme"`
-	Published        types.Bool        `tfsdk:"published"`
-	ShowTags         types.Bool        `tfsdk:"show_tags"`
-	DomainNameList   []types.String    `tfsdk:"domain_name_list"`
-	FooterText       types.String      `tfsdk:"footer_text"`
-	CustomCSS        types.String      `tfsdk:"custom_css"`
-	GoogleAnalyticsID types.String     `tfsdk:"google_analytics_id"`
-	Icon             types.String      `tfsdk:"icon"`
-	ShowPoweredBy    types.Bool        `tfsdk:"show_powered_by"`
-	PublicGroupList  []PublicGroupModel `tfsdk:"public_group_list"`
+	ID                types.Int64        `tfsdk:"id"`
+	Slug              types.String       `tfsdk:"slug"`
+	Title             types.String       `tfsdk:"title"`
+	Description       types.String       `tfsdk:"description"`
+	Theme             types.String       `tfsdk:"theme"`
+	Published         types.Bool         `tfsdk:"published"`
+	ShowTags          types.Bool         `tfsdk:"show_tags"`
+	DomainNameList    []types.String     `tfsdk:"domain_name_list"`
+	FooterText        types.String       `tfsdk:"footer_text"`
+	CustomCSS         types.String       `tfsdk:"custom_css"`
+	GoogleAnalyticsID types.String       `tfsdk:"google_analytics_id"`
+	Icon              types.String       `tfsdk:"icon"`
+	ShowPoweredBy     types.Bool         `tfsdk:"show_powered_by"`
+	PublicGroupList   []PublicGroupModel `tfsdk:"public_group_list"`
 }
 
 func (r *StatusPageResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -70,7 +70,7 @@ func (r *StatusPageResource) Schema(ctx context.Context, req resource.SchemaRequ
 			"id": schema.Int64Attribute{
 				Computed:            true,
 				MarkdownDescription: "Status page identifier",
-				PlanModifiers: []planmodifier.Int64{
+				PlanModifiers:       []planmodifier.Int64{
 					// UseStateForUnknown tells Terraform to keep the value from the prior state if it's not explicitly set in the configuration.
 					// This is useful for computed attributes that don't change.
 				},
@@ -324,20 +324,20 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	data.Theme = types.StringValue(statusPage.Theme)
 	data.Published = types.BoolValue(statusPage.Published)
 	data.ShowTags = types.BoolValue(statusPage.ShowTags)
-	
+
 	// Convert domain names
 	domainNames := make([]types.String, 0, len(statusPage.DomainNameList))
 	for _, domain := range statusPage.DomainNameList {
 		domainNames = append(domainNames, types.StringValue(domain))
 	}
 	data.DomainNameList = domainNames
-	
+
 	data.FooterText = types.StringValue(statusPage.FooterText)
 	data.CustomCSS = types.StringValue(statusPage.CustomCSS)
 	data.GoogleAnalyticsID = types.StringValue(statusPage.GoogleAnalyticsID)
 	data.Icon = types.StringValue(statusPage.Icon)
 	data.ShowPoweredBy = types.BoolValue(statusPage.ShowPoweredBy)
-	
+
 	// Convert public groups
 	groups := make([]PublicGroupModel, 0, len(statusPage.PublicGroupList))
 	for _, apiGroup := range statusPage.PublicGroupList {
@@ -346,14 +346,14 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 			Name:   types.StringValue(apiGroup.Name),
 			Weight: types.Int64Value(int64(apiGroup.Weight)),
 		}
-		
+
 		// Convert monitor list
 		monitors := make([]types.Int64, 0, len(apiGroup.MonitorList))
 		for _, monitorID := range apiGroup.MonitorList {
 			monitors = append(monitors, types.Int64Value(int64(monitorID)))
 		}
 		group.MonitorList = monitors
-		
+
 		groups = append(groups, group)
 	}
 	data.PublicGroupList = groups

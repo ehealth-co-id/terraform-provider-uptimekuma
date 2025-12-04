@@ -6,6 +6,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,8 +16,14 @@ import (
 	"time"
 )
 
-// TestTagOperations tests tag API operations
+// TestTagOperations tests tag API operations.
 func TestTagOperations(t *testing.T) {
+	writeJSON := func(w http.ResponseWriter, payload interface{}) {
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
+		}
+	}
+
 	// Setup tags for the mock server
 	tags := []Tag{
 		{
@@ -37,7 +44,7 @@ func TestTagOperations(t *testing.T) {
 		if r.URL.Path == "/login/access-token" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(TokenResponse{
+			writeJSON(w, TokenResponse{
 				AccessToken: "test-token-12345",
 				TokenType:   "Bearer",
 			})
@@ -59,7 +66,7 @@ func TestTagOperations(t *testing.T) {
 			case http.MethodGet:
 				// List tags
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(tags)
+				writeJSON(w, tags)
 				return
 			case http.MethodPost:
 				// Create tag
@@ -71,7 +78,7 @@ func TestTagOperations(t *testing.T) {
 				newTag.ID = len(tags) + 1
 				tags = append(tags, newTag)
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(newTag)
+				writeJSON(w, newTag)
 				return
 			}
 		} else if strings.HasPrefix(r.URL.Path, "/tags/") {
@@ -107,7 +114,7 @@ func TestTagOperations(t *testing.T) {
 			case http.MethodGet:
 				// Get tag
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(tags[tagIndex])
+				writeJSON(w, tags[tagIndex])
 				return
 			case http.MethodDelete:
 				// Delete tag
@@ -181,12 +188,12 @@ func TestTagOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTags failed after deletion: %v", err)
 	}
-	
+
 	// Should have 2 tags now (ID 1 and ID 3, ID 2 was deleted)
 	if len(retrievedTags) != 2 {
 		t.Errorf("Expected 2 tags after deletion, got %d", len(retrievedTags))
 	}
-	
+
 	// Verify the deleted tag is not in the list
 	for _, tag := range retrievedTags {
 		if tag.ID == 2 {

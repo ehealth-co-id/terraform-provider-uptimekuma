@@ -6,6 +6,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -14,8 +15,14 @@ import (
 	"time"
 )
 
-// TestStatusPageOperations tests status page API operations
+// TestStatusPageOperations tests status page API operations.
 func TestStatusPageOperations(t *testing.T) {
+	writeJSON := func(w http.ResponseWriter, payload interface{}) {
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
+		}
+	}
+
 	// Setup status pages for the mock server
 	statusPages := []StatusPage{
 		{
@@ -31,9 +38,9 @@ func TestStatusPageOperations(t *testing.T) {
 			ShowPoweredBy:  true,
 			PublicGroupList: []PublicGroup{
 				{
-					ID:         1,
-					Name:       "API Services",
-					Weight:     1,
+					ID:          1,
+					Name:        "API Services",
+					Weight:      1,
 					MonitorList: []int{1, 2, 3},
 				},
 			},
@@ -51,9 +58,9 @@ func TestStatusPageOperations(t *testing.T) {
 			ShowPoweredBy:  false,
 			PublicGroupList: []PublicGroup{
 				{
-					ID:         2,
-					Name:       "Dev Services",
-					Weight:     1,
+					ID:          2,
+					Name:        "Dev Services",
+					Weight:      1,
 					MonitorList: []int{4, 5},
 				},
 			},
@@ -66,7 +73,7 @@ func TestStatusPageOperations(t *testing.T) {
 		if r.URL.Path == "/login/access-token" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(TokenResponse{
+			writeJSON(w, TokenResponse{
 				AccessToken: "test-token-12345",
 				TokenType:   "Bearer",
 			})
@@ -88,7 +95,7 @@ func TestStatusPageOperations(t *testing.T) {
 			case http.MethodGet:
 				// List status pages
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(StatusPageList{
+				writeJSON(w, StatusPageList{
 					StatusPages: statusPages,
 				})
 				return
@@ -99,7 +106,7 @@ func TestStatusPageOperations(t *testing.T) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
-				
+
 				// Check for duplicate slug
 				for _, sp := range statusPages {
 					if sp.Slug == request.Slug {
@@ -107,7 +114,7 @@ func TestStatusPageOperations(t *testing.T) {
 						return
 					}
 				}
-				
+
 				// Create new status page
 				newStatusPage := StatusPage{
 					ID:             len(statusPages) + 1,
@@ -122,9 +129,9 @@ func TestStatusPageOperations(t *testing.T) {
 					ShowPoweredBy:  true,
 				}
 				statusPages = append(statusPages, newStatusPage)
-				
+
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(AddStatusPageResponse{
+				writeJSON(w, AddStatusPageResponse{
 					Msg: "Status page created",
 				})
 				return
@@ -137,7 +144,7 @@ func TestStatusPageOperations(t *testing.T) {
 			}
 
 			slug := parts[2]
-			
+
 			// Handle special endpoints
 			if len(parts) > 3 {
 				switch parts[3] {
@@ -146,7 +153,7 @@ func TestStatusPageOperations(t *testing.T) {
 						// Unpin incident
 						if r.Method == http.MethodDelete {
 							w.WriteHeader(http.StatusOK)
-							json.NewEncoder(w).Encode(UnpinIncidentResponse{
+							writeJSON(w, UnpinIncidentResponse{
 								Detail: "Incident unpinned",
 							})
 							return
@@ -159,9 +166,9 @@ func TestStatusPageOperations(t *testing.T) {
 								w.WriteHeader(http.StatusBadRequest)
 								return
 							}
-							
+
 							w.WriteHeader(http.StatusOK)
-							json.NewEncoder(w).Encode(PostIncidentResponse{
+							writeJSON(w, PostIncidentResponse{
 								ID:          1,
 								Title:       request.Title,
 								Content:     request.Content,
@@ -193,7 +200,7 @@ func TestStatusPageOperations(t *testing.T) {
 			case http.MethodGet:
 				// Get status page
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(statusPages[spIndex])
+				writeJSON(w, statusPages[spIndex])
 				return
 			case http.MethodPost:
 				// Update status page
@@ -202,7 +209,7 @@ func TestStatusPageOperations(t *testing.T) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
-				
+
 				if request.Title != "" {
 					statusPages[spIndex].Title = request.Title
 				}
@@ -233,9 +240,9 @@ func TestStatusPageOperations(t *testing.T) {
 				if len(request.PublicGroupList) > 0 {
 					statusPages[spIndex].PublicGroupList = request.PublicGroupList
 				}
-				
+
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(SaveStatusPageResponse{
+				writeJSON(w, SaveStatusPageResponse{
 					Detail: "Status page updated",
 				})
 				return
@@ -243,7 +250,7 @@ func TestStatusPageOperations(t *testing.T) {
 				// Delete status page
 				statusPages = append(statusPages[:spIndex], statusPages[spIndex+1:]...)
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(DeleteStatusPageResponse{
+				writeJSON(w, DeleteStatusPageResponse{
 					Detail: "Status page deleted",
 				})
 				return

@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// TestMonitorOperations tests monitor API operations
+// TestMonitorOperations tests monitor API operations.
 func TestMonitorOperations(t *testing.T) {
 	// Setup monitors for the mock server
 	monitors := []Monitor{
@@ -43,6 +43,12 @@ func TestMonitorOperations(t *testing.T) {
 		},
 	}
 
+	writeJSON := func(w http.ResponseWriter, payload interface{}) {
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
+		}
+	}
+
 	// Setup mock server with debugging
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Debug logging
@@ -51,7 +57,7 @@ func TestMonitorOperations(t *testing.T) {
 		if r.URL.Path == "/login/access-token" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(TokenResponse{
+			writeJSON(w, TokenResponse{
 				AccessToken: "test-token-12345",
 				TokenType:   "Bearer",
 			})
@@ -73,7 +79,7 @@ func TestMonitorOperations(t *testing.T) {
 			case http.MethodGet:
 				// List monitors
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(monitors)
+				writeJSON(w, monitors)
 				return
 			case http.MethodPost:
 				// Create monitor
@@ -85,7 +91,7 @@ func TestMonitorOperations(t *testing.T) {
 				newMonitor.ID = len(monitors) + 1
 				monitors = append(monitors, newMonitor)
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(MonitorCreateResponse{
+				writeJSON(w, MonitorCreateResponse{
 					MonitorID: newMonitor.ID,
 					Msg:       "monitor created",
 				})
@@ -102,13 +108,12 @@ func TestMonitorOperations(t *testing.T) {
 			idStr := parts[2]
 			var id int
 			var err error
-			
+
 			if strings.Contains(idStr, "?") || strings.Contains(idStr, "pause") || strings.Contains(idStr, "resume") || strings.Contains(idStr, "beats") || strings.Contains(idStr, "tag") {
 				// Special handling for action endpoints
 				if strings.Contains(r.URL.Path, "/pause") {
 					idStr = strings.TrimSuffix(parts[2], "/pause")
-					id, err = strconv.Atoi(idStr)
-					if err != nil {
+					if _, err = strconv.Atoi(idStr); err != nil {
 						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
@@ -116,8 +121,7 @@ func TestMonitorOperations(t *testing.T) {
 					return
 				} else if strings.Contains(r.URL.Path, "/resume") {
 					idStr = strings.TrimSuffix(parts[2], "/resume")
-					id, err = strconv.Atoi(idStr)
-					if err != nil {
+					if _, err = strconv.Atoi(idStr); err != nil {
 						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
@@ -125,13 +129,12 @@ func TestMonitorOperations(t *testing.T) {
 					return
 				} else if strings.Contains(r.URL.Path, "/beats") {
 					idStr = strings.TrimSuffix(parts[2], "/beats")
-					id, err = strconv.Atoi(idStr)
-					if err != nil {
+					if _, err = strconv.Atoi(idStr); err != nil {
 						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
 					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(map[string]interface{}{
+					writeJSON(w, map[string]interface{}{
 						"beats": []map[string]interface{}{
 							{"status": 1, "time": time.Now().Unix()},
 							{"status": 1, "time": time.Now().Unix() - 60},
@@ -140,14 +143,13 @@ func TestMonitorOperations(t *testing.T) {
 					return
 				} else if strings.Contains(r.URL.Path, "/tag") {
 					idStr = strings.TrimSuffix(parts[2], "/tag")
-					id, err = strconv.Atoi(idStr)
-					if err != nil {
+					if _, err = strconv.Atoi(idStr); err != nil {
 						w.WriteHeader(http.StatusBadRequest)
 						return
 					}
-					
-					if r.Method == http.MethodPost {
-						// Add tag
+
+					switch r.Method {
+					case http.MethodPost:
 						var tagData map[string]interface{}
 						if err := json.NewDecoder(r.Body).Decode(&tagData); err != nil {
 							w.WriteHeader(http.StatusBadRequest)
@@ -155,8 +157,7 @@ func TestMonitorOperations(t *testing.T) {
 						}
 						w.WriteHeader(http.StatusOK)
 						return
-					} else if r.Method == http.MethodDelete {
-						// Delete tag
+					case http.MethodDelete:
 						var tagData map[string]interface{}
 						if err := json.NewDecoder(r.Body).Decode(&tagData); err != nil {
 							w.WriteHeader(http.StatusBadRequest)
@@ -183,9 +184,9 @@ func TestMonitorOperations(t *testing.T) {
 				}
 			}
 
-			if monitorIndex == -1 && !strings.Contains(r.URL.Path, "/pause") && 
-			   !strings.Contains(r.URL.Path, "/resume") && !strings.Contains(r.URL.Path, "/beats") && 
-			   !strings.Contains(r.URL.Path, "/tag") {
+			if monitorIndex == -1 && !strings.Contains(r.URL.Path, "/pause") &&
+				!strings.Contains(r.URL.Path, "/resume") && !strings.Contains(r.URL.Path, "/beats") &&
+				!strings.Contains(r.URL.Path, "/tag") {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
@@ -194,7 +195,7 @@ func TestMonitorOperations(t *testing.T) {
 			case http.MethodGet:
 				// Get monitor
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(monitors[monitorIndex])
+				writeJSON(w, monitors[monitorIndex])
 				return
 			case http.MethodPatch:
 				// Update monitor
@@ -207,7 +208,7 @@ func TestMonitorOperations(t *testing.T) {
 				updateData.ID = monitors[monitorIndex].ID
 				monitors[monitorIndex] = updateData
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(updateData)
+				writeJSON(w, updateData)
 				return
 			case http.MethodDelete:
 				// Delete monitor
@@ -305,17 +306,17 @@ func TestMonitorOperations(t *testing.T) {
 
 	// Skip PauseMonitor and ResumeMonitor tests for now
 	fmt.Println("Skipping pause/resume tests while we fix the implementation")
-	
-	/* 
-	// Test PauseMonitor
-	if err := client.PauseMonitor(ctx, 1); err != nil {
-		t.Fatalf("PauseMonitor failed: %v", err)
-	}
 
-	// Test ResumeMonitor
-	if err := client.ResumeMonitor(ctx, 1); err != nil {
-		t.Fatalf("ResumeMonitor failed: %v", err)
-	}
+	/*
+		// Test PauseMonitor
+		if err := client.PauseMonitor(ctx, 1); err != nil {
+			t.Fatalf("PauseMonitor failed: %v", err)
+		}
+
+		// Test ResumeMonitor
+		if err := client.ResumeMonitor(ctx, 1); err != nil {
+			t.Fatalf("ResumeMonitor failed: %v", err)
+		}
 	*/
 
 	// Test GetMonitorBeats
@@ -327,17 +328,17 @@ func TestMonitorOperations(t *testing.T) {
 
 	// Skip tag tests for now
 	fmt.Println("Skipping tag tests while we fix the implementation")
-	
-	/*
-	// Test AddMonitorTag
-	if err := client.AddMonitorTag(ctx, 1, 99, "test"); err != nil {
-		t.Fatalf("AddMonitorTag failed: %v", err)
-	}
 
-	// Test DeleteMonitorTag
-	if err := client.DeleteMonitorTag(ctx, 1, 99); err != nil {
-		t.Fatalf("DeleteMonitorTag failed: %v", err)
-	}
+	/*
+		// Test AddMonitorTag
+		if err := client.AddMonitorTag(ctx, 1, 99, "test"); err != nil {
+			t.Fatalf("AddMonitorTag failed: %v", err)
+		}
+
+		// Test DeleteMonitorTag
+		if err := client.DeleteMonitorTag(ctx, 1, 99); err != nil {
+			t.Fatalf("DeleteMonitorTag failed: %v", err)
+		}
 	*/
 
 	// Test DeleteMonitor
