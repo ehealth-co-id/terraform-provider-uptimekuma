@@ -310,7 +310,7 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	// Update Terraform state
-	data.ID = types.Int64Value(int64(createdMonitor.MonitorID))
+	data.ID = types.Int64Value(int64(createdMonitor.ID))
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
