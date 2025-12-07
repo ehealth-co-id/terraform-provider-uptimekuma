@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) eHealth.co.id as PT Aksara Digital Indonesia
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/**
  * Playwright script to automate Uptime Kuma admin account setup.
  * This script is used in CI to configure the initial admin account
  * since Uptime Kuma requires manual setup on first run.

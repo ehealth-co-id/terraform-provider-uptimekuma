@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,13 +23,17 @@ type TokenResponse struct {
 
 // AuthClient handles authentication with the Uptime Kuma API.
 type AuthClient struct {
-	baseURL     string
-	username    string
-	password    string
-	httpClient  *http.Client
-	token       string
-	tokenExpiry time.Time
-	mutex       sync.RWMutex
+	baseURL         string
+	username        string
+	password        string
+	httpClient      *http.Client
+	token           string
+	tokenExpiry     time.Time
+	mutex           sync.RWMutex
+	lastAuthAttempt time.Time
+	minAuthInterval time.Duration
+	maxRetries      int
+	retryBaseDelay  time.Duration
 }
 
 // NewAuthClient creates a new auth client.
@@ -40,10 +45,13 @@ func NewAuthClient(baseURL, username, password string, httpClient *http.Client) 
 	}
 
 	return &AuthClient{
-		baseURL:    baseURL,
-		username:   username,
-		password:   password,
-		httpClient: httpClient,
+		baseURL:         baseURL,
+		username:        username,
+		password:        password,
+		httpClient:      httpClient,
+		minAuthInterval: 2 * time.Second, // Minimum time between auth attempts
+		maxRetries:      3,               // Maximum retry attempts
+		retryBaseDelay:  1 * time.Second, // Base delay for exponential backoff
 	}
 }
 
@@ -54,24 +62,71 @@ func (a *AuthClient) GetToken(ctx context.Context) (string, error) {
 	expiry := a.tokenExpiry
 	a.mutex.RUnlock()
 
-	// Check if we need a new token
-	if token == "" || time.Now().After(expiry) {
+	// Check if we need a new token (with 5 minute buffer before expiry)
+	if token == "" || time.Now().Add(5*time.Minute).After(expiry) {
 		return a.refreshToken(ctx)
 	}
 
 	return token, nil
 }
 
-// refreshToken authenticates and gets a fresh token.
+// refreshToken authenticates and gets a fresh token with retry logic.
 func (a *AuthClient) refreshToken(ctx context.Context) (string, error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
 	// Double check that we still need a token after acquiring the lock
-	if a.token != "" && time.Now().Before(a.tokenExpiry) {
+	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.tokenExpiry) {
 		return a.token, nil
 	}
 
+	// Enforce minimum interval between auth attempts to avoid rate limiting
+	timeSinceLastAttempt := time.Since(a.lastAuthAttempt)
+	if timeSinceLastAttempt < a.minAuthInterval {
+		waitTime := a.minAuthInterval - timeSinceLastAttempt
+		select {
+		case <-time.After(waitTime):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= a.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s, ...
+			backoff := a.retryBaseDelay * time.Duration(1<<uint(attempt-1))
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+
+		a.lastAuthAttempt = time.Now()
+
+		token, err := a.doAuthenticate(ctx)
+		if err == nil {
+			return token, nil
+		}
+
+		lastErr = err
+
+		// Check if it's a rate limit error (400 with "Too frequently" or "Incorrect")
+		if strings.Contains(err.Error(), "400") {
+			// Rate limited, continue retrying with backoff
+			continue
+		}
+
+		// For other errors, don't retry
+		break
+	}
+
+	return "", fmt.Errorf("authentication failed after %d attempts: %w", a.maxRetries+1, lastErr)
+}
+
+// doAuthenticate performs the actual authentication request.
+func (a *AuthClient) doAuthenticate(ctx context.Context) (string, error) {
 	// Prepare the authentication request
 	data := url.Values{}
 	data.Set("username", a.username)
@@ -94,7 +149,8 @@ func (a *AuthClient) refreshToken(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("authentication failed with status code: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("authentication failed with status code %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse the token response
@@ -107,9 +163,9 @@ func (a *AuthClient) refreshToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("received empty access token")
 	}
 
-	// Store the token and set expiry (assuming 1 hour validity, adjust as needed)
+	// Store the token and set expiry (assuming 1 hour validity)
 	a.token = tokenResp.AccessToken
-	a.tokenExpiry = time.Now().Add(1 * time.Hour)
+	a.tokenExpiry = time.Now().Add(55 * time.Minute) // 55 min to allow buffer
 
 	return a.token, nil
 }

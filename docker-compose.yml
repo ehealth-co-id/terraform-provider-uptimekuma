@@ -1,3 +1,6 @@
+# Copyright (c) eHealth.co.id as PT Aksara Digital Indonesia
+# SPDX-License-Identifier: MPL-2.0
+
 # Docker Compose setup for local testing of the Terraform provider.
 # Based on: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
 #

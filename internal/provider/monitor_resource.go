@@ -406,22 +406,32 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		data.NotificationIDList = listVal
 	}
 
-	// Read AcceptedStatusCodes
+	// Read AcceptedStatusCodes - filter out null values
 	if len(monitor.AcceptedStatusCodes) > 0 {
-		codes := make([]types.Int64, len(monitor.AcceptedStatusCodes))
-		for i, v := range monitor.AcceptedStatusCodes {
+		var codes []types.Int64
+		for _, v := range monitor.AcceptedStatusCodes {
+			if v == nil {
+				continue // Skip null values
+			}
 			switch val := v.(type) {
 			case float64:
-				codes[i] = types.Int64Value(int64(val))
+				codes = append(codes, types.Int64Value(int64(val)))
 			case int:
-				codes[i] = types.Int64Value(int64(val))
+				codes = append(codes, types.Int64Value(int64(val)))
 			case int64:
-				codes[i] = types.Int64Value(val)
+				codes = append(codes, types.Int64Value(val))
 			}
 		}
-		listVal, diags := types.ListValueFrom(ctx, types.Int64Type, codes)
-		resp.Diagnostics.Append(diags...)
-		data.AcceptedStatusCodes = listVal
+		// Only set if we have actual values (not just nulls)
+		if len(codes) > 0 {
+			listVal, diags := types.ListValueFrom(ctx, types.Int64Type, codes)
+			resp.Diagnostics.Append(diags...)
+			data.AcceptedStatusCodes = listVal
+		} else {
+			data.AcceptedStatusCodes = types.ListNull(types.Int64Type)
+		}
+	} else {
+		data.AcceptedStatusCodes = types.ListNull(types.Int64Type)
 	}
 
 	// DatabaseConnectionString - read from hostname for database monitors

@@ -138,8 +138,25 @@ jobs:
             echo "Attempt $i/30 - waiting..."
             sleep 2
           done
-          # Give it a few more seconds to fully connect
-          sleep 5
+          # Give it more time to fully connect and stabilize
+          sleep 10
+
+      - name: Verify API authentication
+        run: |
+          echo "Testing API authentication..."
+          for i in {1..5}; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8000/login/access-token \
+              -d "username=admin&password=admin123")
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "API authentication successful!"
+              exit 0
+            fi
+            echo "Attempt $i/5 - HTTP $HTTP_CODE, retrying..."
+            sleep 5
+          done
+          echo "API authentication failed after 5 attempts"
+          exit 1
 
       - name: Show Docker logs
         if: always()
@@ -158,7 +175,8 @@ jobs:
           UPTIMEKUMA_BASE_URL: "http://localhost:8000"
           UPTIMEKUMA_USERNAME: "admin"
           UPTIMEKUMA_PASSWORD: "admin123"
-        run: go test -v -cover ./internal/provider/
+        # Use -p 1 to run tests sequentially and avoid rate limiting
+        run: go test -v -cover -p 1 -parallel 1 ./internal/provider/
         timeout-minutes: 10
 
       - name: Show Docker logs on failure

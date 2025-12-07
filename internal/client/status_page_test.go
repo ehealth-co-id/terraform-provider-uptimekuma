@@ -41,7 +41,7 @@ func TestStatusPageOperations(t *testing.T) {
 					ID:          1,
 					Name:        "API Services",
 					Weight:      1,
-					MonitorList: []int{1, 2, 3},
+					MonitorList: []StatusPageMonitor{{ID: 1}, {ID: 2}, {ID: 3}},
 				},
 			},
 		},
@@ -61,7 +61,7 @@ func TestStatusPageOperations(t *testing.T) {
 					ID:          2,
 					Name:        "Dev Services",
 					Weight:      1,
-					MonitorList: []int{4, 5},
+					MonitorList: []StatusPageMonitor{{ID: 4}, {ID: 5}},
 				},
 			},
 		},
@@ -90,7 +90,7 @@ func TestStatusPageOperations(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		// Handle status page requests
-		if r.URL.Path == "/status-pages" {
+		if r.URL.Path == "/statuspages" {
 			switch r.Method {
 			case http.MethodGet:
 				// List status pages
@@ -136,7 +136,7 @@ func TestStatusPageOperations(t *testing.T) {
 				})
 				return
 			}
-		} else if strings.HasPrefix(r.URL.Path, "/status-pages/") {
+		} else if strings.HasPrefix(r.URL.Path, "/statuspages/") {
 			parts := strings.Split(r.URL.Path, "/")
 			if len(parts) < 3 {
 				w.WriteHeader(http.StatusBadRequest)

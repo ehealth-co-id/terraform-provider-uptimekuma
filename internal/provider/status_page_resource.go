@@ -43,20 +43,20 @@ type PublicGroupModel struct {
 
 // StatusPageResourceModel describes the resource data model.
 type StatusPageResourceModel struct {
-	ID               types.Int64       `tfsdk:"id"`
-	Slug             types.String      `tfsdk:"slug"`
-	Title            types.String      `tfsdk:"title"`
-	Description      types.String      `tfsdk:"description"`
-	Theme            types.String      `tfsdk:"theme"`
-	Published        types.Bool        `tfsdk:"published"`
-	ShowTags         types.Bool        `tfsdk:"show_tags"`
-	DomainNameList   []types.String    `tfsdk:"domain_name_list"`
-	FooterText       types.String      `tfsdk:"footer_text"`
-	CustomCSS        types.String      `tfsdk:"custom_css"`
-	GoogleAnalyticsID types.String     `tfsdk:"google_analytics_id"`
-	Icon             types.String      `tfsdk:"icon"`
-	ShowPoweredBy    types.Bool        `tfsdk:"show_powered_by"`
-	PublicGroupList  []PublicGroupModel `tfsdk:"public_group_list"`
+	ID                types.Int64        `tfsdk:"id"`
+	Slug              types.String       `tfsdk:"slug"`
+	Title             types.String       `tfsdk:"title"`
+	Description       types.String       `tfsdk:"description"`
+	Theme             types.String       `tfsdk:"theme"`
+	Published         types.Bool         `tfsdk:"published"`
+	ShowTags          types.Bool         `tfsdk:"show_tags"`
+	DomainNameList    []types.String     `tfsdk:"domain_name_list"`
+	FooterText        types.String       `tfsdk:"footer_text"`
+	CustomCSS         types.String       `tfsdk:"custom_css"`
+	GoogleAnalyticsID types.String       `tfsdk:"google_analytics_id"`
+	Icon              types.String       `tfsdk:"icon"`
+	ShowPoweredBy     types.Bool         `tfsdk:"show_powered_by"`
+	PublicGroupList   []PublicGroupModel `tfsdk:"public_group_list"`
 }
 
 func (r *StatusPageResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -343,7 +343,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	if statusPage.Theme != "" || !data.Theme.IsNull() {
 		data.Theme = types.StringValue(statusPage.Theme)
 	}
-	
+
 	// Convert domain names - only if there are any or was previously set
 	if len(statusPage.DomainNameList) > 0 || data.DomainNameList != nil {
 		domainNames := make([]types.String, 0, len(statusPage.DomainNameList))
@@ -352,7 +352,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		}
 		data.DomainNameList = domainNames
 	}
-	
+
 	if statusPage.FooterText != "" || !data.FooterText.IsNull() {
 		data.FooterText = types.StringValue(statusPage.FooterText)
 	}
@@ -366,7 +366,7 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 	if !data.Icon.IsNull() {
 		data.Icon = types.StringValue(statusPage.Icon)
 	}
-	
+
 	// Convert public groups - only if there are any or was previously set
 	if len(statusPage.PublicGroupList) > 0 || data.PublicGroupList != nil {
 		groups := make([]PublicGroupModel, 0, len(statusPage.PublicGroupList))
@@ -376,14 +376,14 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 				Name:   types.StringValue(apiGroup.Name),
 				Weight: types.Int64Value(int64(apiGroup.Weight)),
 			}
-			
+
 			// Convert monitor list (extract ID from StatusPageMonitor objects)
 			monitors := make([]types.Int64, 0, len(apiGroup.MonitorList))
 			for _, monitor := range apiGroup.MonitorList {
 				monitors = append(monitors, types.Int64Value(int64(monitor.ID)))
 			}
 			group.MonitorList = monitors
-			
+
 			groups = append(groups, group)
 		}
 		data.PublicGroupList = groups

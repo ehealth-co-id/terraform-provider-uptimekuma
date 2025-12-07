@@ -79,7 +79,7 @@ func TestMonitorOperations(t *testing.T) {
 			case http.MethodGet:
 				// List monitors
 				w.WriteHeader(http.StatusOK)
-				writeJSON(w, monitors)
+				writeJSON(w, MonitorsResponse{Monitors: monitors})
 				return
 			case http.MethodPost:
 				// Create monitor
@@ -195,7 +195,7 @@ func TestMonitorOperations(t *testing.T) {
 			case http.MethodGet:
 				// Get monitor
 				w.WriteHeader(http.StatusOK)
-				writeJSON(w, monitors[monitorIndex])
+				writeJSON(w, MonitorResponse{Monitor: monitors[monitorIndex]})
 				return
 			case http.MethodPatch:
 				// Update monitor
@@ -208,7 +208,7 @@ func TestMonitorOperations(t *testing.T) {
 				updateData.ID = monitors[monitorIndex].ID
 				monitors[monitorIndex] = updateData
 				w.WriteHeader(http.StatusOK)
-				writeJSON(w, updateData)
+				writeJSON(w, MonitorResponse{Monitor: updateData})
 				return
 			case http.MethodDelete:
 				// Delete monitor
@@ -274,10 +274,10 @@ func TestMonitorOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMonitor failed: %v", err)
 	}
-	if createdMonitor.MonitorID != 3 {
+	if createdMonitor.ID != 3 {
 		t.Errorf("CreateMonitor returned unexpected monitor ID: %+v", createdMonitor)
 	}
-	created, err := client.GetMonitor(ctx, createdMonitor.MonitorID)
+	created, err := client.GetMonitor(ctx, createdMonitor.ID)
 	if err != nil {
 		t.Fatalf("GetMonitor after create failed: %v", err)
 	}
