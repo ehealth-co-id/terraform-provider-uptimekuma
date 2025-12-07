@@ -77,23 +77,39 @@ type Monitor struct {
 	DockerHost          int           `json:"docker_host,omitempty"`
 }
 
+// MonitorsResponse represents the API response for listing monitors
+type MonitorsResponse struct {
+	Monitors []Monitor `json:"monitors"`
+}
+
+// MonitorResponse represents the API response for a single monitor
+type MonitorResponse struct {
+	Monitor Monitor `json:"monitor"`
+}
+
+// MonitorCreateResponse represents the API response for creating a monitor
+type MonitorCreateResponse struct {
+	MonitorID int    `json:"monitorId"`
+	Msg       string `json:"msg"`
+}
+
 // GetMonitors retrieves all monitors
 func (c *Client) GetMonitors(ctx context.Context) ([]Monitor, error) {
-	var result []Monitor
+	var result MonitorsResponse
 	if err := c.Get(ctx, "/monitors", &result); err != nil {
 		return nil, fmt.Errorf("failed to get monitors: %w", err)
 	}
-	return result, nil
+	return result.Monitors, nil
 }
 
 // GetMonitor retrieves a specific monitor by ID
 func (c *Client) GetMonitor(ctx context.Context, id int) (*Monitor, error) {
-	var result Monitor
+	var result MonitorResponse
 	path := fmt.Sprintf("/monitors/%d", id)
 	if err := c.Get(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("failed to get monitor %d: %w", id, err)
 	}
-	return &result, nil
+	return &result.Monitor, nil
 }
 
 // CreateMonitor creates a new monitor
@@ -103,11 +119,14 @@ func (c *Client) CreateMonitor(ctx context.Context, monitor *Monitor) (*Monitor,
 		return nil, fmt.Errorf("failed to marshal monitor: %w", err)
 	}
 
-	var result Monitor
+	var result MonitorCreateResponse
 	if err := c.Post(ctx, "/monitors", bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to create monitor: %w", err)
 	}
-	return &result, nil
+	
+	// Return the monitor with the ID from the response
+	monitor.ID = result.MonitorID
+	return monitor, nil
 }
 
 // UpdateMonitor updates an existing monitor
@@ -117,12 +136,12 @@ func (c *Client) UpdateMonitor(ctx context.Context, id int, monitor *Monitor) (*
 		return nil, fmt.Errorf("failed to marshal monitor: %w", err)
 	}
 
-	var result Monitor
+	var result MonitorResponse
 	path := fmt.Sprintf("/monitors/%d", id)
 	if err := c.Patch(ctx, path, bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to update monitor %d: %w", id, err)
 	}
-	return &result, nil
+	return &result.Monitor, nil
 }
 
 // DeleteMonitor deletes a monitor

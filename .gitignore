@@ -27,6 +27,14 @@ website/node_modules
 
 website/vendor
 
+# Docker volumes for local testing
+uptime_kuma/
+uptime_kuma_api/
+
+# Node.js (scripts for CI)
+scripts/node_modules/
+scripts/package-lock.json
+
 # Test exclusions
 !command/test-fixtures/**/*.tfstate
 !command/test-fixtures/**/.terraform/

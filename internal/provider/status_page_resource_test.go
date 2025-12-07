@@ -45,11 +45,13 @@ func TestAccStatusPageResource(t *testing.T) {
 					),
 				},
 			},
-			// ImportState testing
+			// ImportState testing - import by slug
 			{
-				ResourceName:      "uptimekuma_status_page.test",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "uptimekuma_status_page.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateId:           "test-page",
+				ImportStateVerifyIgnore: []string{"id"}, // ID might differ after import
 			},
 			// Update and Read testing
 			{
@@ -156,21 +158,22 @@ resource "uptimekuma_status_page" "with_groups" {
   published = true
   theme     = "dark"
   
-  public_group_list {
-    name = "Core Services"
-    weight = 1
-    monitor_list = [
-      uptimekuma_monitor.http1.id
-    ]
-  }
-  
-  public_group_list {
-    name = "Secondary Services"
-    weight = 2
-    monitor_list = [
-      uptimekuma_monitor.http2.id
-    ]
-  }
+  public_group_list = [
+    {
+      name = "Core Services"
+      weight = 1
+      monitor_list = [
+        uptimekuma_monitor.http1.id
+      ]
+    },
+    {
+      name = "Secondary Services"
+      weight = 2
+      monitor_list = [
+        uptimekuma_monitor.http2.id
+      ]
+    }
+  ]
 }
 `, 
 	os.Getenv("UPTIMEKUMA_BASE_URL"),

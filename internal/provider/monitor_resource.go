@@ -290,27 +290,55 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	// Update the data model
+	// Update the data model - only set values that are meaningful
 	data.ID = types.Int64Value(int64(monitor.ID))
 	data.Type = types.StringValue(string(monitor.Type))
 	data.Name = types.StringValue(monitor.Name)
-	data.URL = types.StringValue(monitor.URL)
-	data.Method = types.StringValue(monitor.Method)
-	data.Hostname = types.StringValue(monitor.Hostname)
-	data.Port = types.Int64Value(int64(monitor.Port))
 	data.Interval = types.Int64Value(int64(monitor.Interval))
 	data.RetryInterval = types.Int64Value(int64(monitor.RetryInterval))
 	data.ResendInterval = types.Int64Value(int64(monitor.ResendInterval))
 	data.MaxRetries = types.Int64Value(int64(monitor.MaxRetries))
-	data.UpsideDown = types.BoolValue(monitor.UpsideDown)
-	data.IgnoreTLS = types.BoolValue(monitor.IgnoreTLS)
-	data.MaxRedirects = types.Int64Value(int64(monitor.MaxRedirects))
-	data.Body = types.StringValue(monitor.Body)
-	data.Headers = types.StringValue(monitor.Headers)
-	data.AuthMethod = types.StringValue(string(monitor.AuthMethod))
-	data.BasicAuthUser = types.StringValue(monitor.BasicAuthUser)
-	data.BasicAuthPass = types.StringValue(monitor.BasicAuthPass)
-	data.Keyword = types.StringValue(monitor.Keyword)
+
+	// Only set optional fields if they have meaningful values or were previously set
+	if monitor.URL != "" {
+		data.URL = types.StringValue(monitor.URL)
+	}
+	if monitor.Method != "" && !data.Method.IsNull() {
+		data.Method = types.StringValue(monitor.Method)
+	}
+	if monitor.Hostname != "" {
+		data.Hostname = types.StringValue(monitor.Hostname)
+	}
+	if !data.Port.IsNull() {
+		data.Port = types.Int64Value(int64(monitor.Port))
+	}
+	if !data.UpsideDown.IsNull() {
+		data.UpsideDown = types.BoolValue(monitor.UpsideDown)
+	}
+	if !data.IgnoreTLS.IsNull() {
+		data.IgnoreTLS = types.BoolValue(monitor.IgnoreTLS)
+	}
+	if !data.MaxRedirects.IsNull() {
+		data.MaxRedirects = types.Int64Value(int64(monitor.MaxRedirects))
+	}
+	if monitor.Body != "" {
+		data.Body = types.StringValue(monitor.Body)
+	}
+	if monitor.Headers != "" {
+		data.Headers = types.StringValue(monitor.Headers)
+	}
+	if monitor.AuthMethod != "" {
+		data.AuthMethod = types.StringValue(string(monitor.AuthMethod))
+	}
+	if monitor.BasicAuthUser != "" {
+		data.BasicAuthUser = types.StringValue(monitor.BasicAuthUser)
+	}
+	if monitor.BasicAuthPass != "" {
+		data.BasicAuthPass = types.StringValue(monitor.BasicAuthPass)
+	}
+	if monitor.Keyword != "" {
+		data.Keyword = types.StringValue(monitor.Keyword)
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

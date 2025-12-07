@@ -7,12 +7,17 @@ import (
 	"fmt"
 )
 
+// StatusPageMonitor represents a monitor reference in a status page group
+type StatusPageMonitor struct {
+	ID int `json:"id"`
+}
+
 // PublicGroup represents a group of monitors on a status page
 type PublicGroup struct {
-	ID         int   `json:"id,omitempty"`
-	Name       string `json:"name"`
-	Weight     int    `json:"weight"`
-	MonitorList []int `json:"monitorList"`
+	ID          int                 `json:"id,omitempty"`
+	Name        string              `json:"name"`
+	Weight      int                 `json:"weight"`
+	MonitorList []StatusPageMonitor `json:"monitorList"`
 }
 
 // StatusPage represents an Uptime Kuma status page
@@ -79,7 +84,7 @@ type DeleteStatusPageResponse struct {
 // GetStatusPages retrieves all status pages
 func (c *Client) GetStatusPages(ctx context.Context) ([]StatusPage, error) {
 	var result StatusPageList
-	if err := c.Get(ctx, "/status-pages", &result); err != nil {
+	if err := c.Get(ctx, "/statuspages", &result); err != nil {
 		return nil, fmt.Errorf("failed to get status pages: %w", err)
 	}
 	return result.StatusPages, nil
@@ -88,7 +93,7 @@ func (c *Client) GetStatusPages(ctx context.Context) ([]StatusPage, error) {
 // GetStatusPage retrieves a specific status page by slug
 func (c *Client) GetStatusPage(ctx context.Context, slug string) (*StatusPage, error) {
 	var result StatusPage
-	path := fmt.Sprintf("/status-pages/%s", slug)
+	path := fmt.Sprintf("/statuspages/%s", slug)
 	if err := c.Get(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("failed to get status page %s: %w", slug, err)
 	}
@@ -103,7 +108,7 @@ func (c *Client) CreateStatusPage(ctx context.Context, request *AddStatusPageReq
 	}
 
 	var result AddStatusPageResponse
-	if err := c.Post(ctx, "/status-pages", bytes.NewReader(data), &result); err != nil {
+	if err := c.Post(ctx, "/statuspages", bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to create status page: %w", err)
 	}
 	return &result, nil
@@ -117,7 +122,7 @@ func (c *Client) UpdateStatusPage(ctx context.Context, slug string, request *Sav
 	}
 
 	var result SaveStatusPageResponse
-	path := fmt.Sprintf("/status-pages/%s", slug)
+	path := fmt.Sprintf("/statuspages/%s", slug)
 	if err := c.Post(ctx, path, bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to update status page %s: %w", slug, err)
 	}
@@ -127,7 +132,7 @@ func (c *Client) UpdateStatusPage(ctx context.Context, slug string, request *Sav
 // DeleteStatusPage deletes a status page
 func (c *Client) DeleteStatusPage(ctx context.Context, slug string) (*DeleteStatusPageResponse, error) {
 	var result DeleteStatusPageResponse
-	path := fmt.Sprintf("/status-pages/%s", slug)
+	path := fmt.Sprintf("/statuspages/%s", slug)
 	if err := c.Delete(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("failed to delete status page %s: %w", slug, err)
 	}
@@ -164,7 +169,7 @@ func (c *Client) PostIncident(ctx context.Context, slug string, request *PostInc
 	}
 
 	var result PostIncidentResponse
-	path := fmt.Sprintf("/status-pages/%s/incident", slug)
+	path := fmt.Sprintf("/statuspages/%s/incident", slug)
 	if err := c.Post(ctx, path, bytes.NewReader(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to post incident to status page %s: %w", slug, err)
 	}
@@ -174,7 +179,7 @@ func (c *Client) PostIncident(ctx context.Context, slug string, request *PostInc
 // UnpinIncident unpins an incident from a status page
 func (c *Client) UnpinIncident(ctx context.Context, slug string) (*UnpinIncidentResponse, error) {
 	var result UnpinIncidentResponse
-	path := fmt.Sprintf("/status-pages/%s/incident/unpin", slug)
+	path := fmt.Sprintf("/statuspages/%s/incident/unpin", slug)
 	if err := c.Delete(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("failed to unpin incident from status page %s: %w", slug, err)
 	}
