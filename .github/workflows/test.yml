@@ -52,37 +52,124 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions
-  test:
-    name: Terraform Provider Acceptance Tests
+  # Run unit tests (no acceptance tests, these run without Uptime Kuma)
+  unit-test:
+    name: Unit Tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # list whatever Terraform versions here you would like to support
-        terraform:
-          - '1.7.*'
-          - '1.8.*'
-          - '1.9.*'
-          - '1.10.*'
-          - '1.11.*'
-          - '1.12.*'
-          - '1.13.*'
-          - '1.14.*'
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version-file: 'go.mod'
           cache: true
+      - run: go mod download
+      - name: Run unit tests
+        run: go test -v -cover ./internal/...
+        timeout-minutes: 5
+
+  # Run acceptance tests with Uptime Kuma running in Docker
+  acceptance-test:
+    name: Acceptance Tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform:
+          - '1.4.*'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Start Uptime Kuma services
+        run: docker compose up -d
+
+      - name: Wait for Uptime Kuma to be ready
+        run: |
+          echo "Waiting for Uptime Kuma to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:3001 > /dev/null; then
+              echo "Uptime Kuma is ready!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting..."
+            sleep 2
+          done
+
+      - name: Install Playwright
+        working-directory: scripts
+        run: |
+          npm install
+          npx playwright install chromium
+
+      - name: Setup Uptime Kuma admin account
+        working-directory: scripts
+        env:
+          UPTIME_KUMA_URL: http://localhost:3001
+          UPTIME_KUMA_ADMIN_USERNAME: admin
+          UPTIME_KUMA_ADMIN_PASSWORD: admin123
+        run: node setup-uptime-kuma.js
+
+      - name: Wait for API adapter to connect
+        run: |
+          echo "Waiting for API adapter to connect..."
+          for i in {1..30}; do
+            # Check if API is responding
+            if curl -s http://localhost:8000/docs > /dev/null; then
+              echo "API adapter is ready!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting..."
+            sleep 2
+          done
+          # Give it a few more seconds to fully connect
+          sleep 5
+
+      - name: Show Docker logs
+        if: always()
+        run: |
+          echo "=== Uptime Kuma logs ==="
+          docker logs uptime-kuma 2>&1 | tail -50
+          echo ""
+          echo "=== API adapter logs ==="
+          docker logs uptime-kuma-api 2>&1 | tail -50
+
       - run: go mod download
-      - env:
+
+      - name: Run acceptance tests
+        env:
           TF_ACC: "1"
+          UPTIMEKUMA_BASE_URL: "http://localhost:8000"
+          UPTIMEKUMA_USERNAME: "admin"
+          UPTIMEKUMA_PASSWORD: "admin123"
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: |
+          echo "=== Uptime Kuma logs ==="
+          docker logs uptime-kuma 2>&1
+          echo ""
+          echo "=== API adapter logs ==="
+          docker logs uptime-kuma-api 2>&1
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,12 @@
+{
+  "name": "uptimekuma-provider-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for setting up Uptime Kuma for provider acceptance tests",
+  "scripts": {
+    "setup": "node setup-uptime-kuma.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
+

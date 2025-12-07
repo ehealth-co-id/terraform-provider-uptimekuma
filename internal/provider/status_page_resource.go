@@ -1,4 +1,4 @@
-// Copyright (c) eHealth.co.id as PT Aksara Digital Indonesia
+// Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
 package provider
@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -42,20 +43,20 @@ type PublicGroupModel struct {
 
 // StatusPageResourceModel describes the resource data model.
 type StatusPageResourceModel struct {
-	ID                types.Int64        `tfsdk:"id"`
-	Slug              types.String       `tfsdk:"slug"`
-	Title             types.String       `tfsdk:"title"`
-	Description       types.String       `tfsdk:"description"`
-	Theme             types.String       `tfsdk:"theme"`
-	Published         types.Bool         `tfsdk:"published"`
-	ShowTags          types.Bool         `tfsdk:"show_tags"`
-	DomainNameList    []types.String     `tfsdk:"domain_name_list"`
-	FooterText        types.String       `tfsdk:"footer_text"`
-	CustomCSS         types.String       `tfsdk:"custom_css"`
-	GoogleAnalyticsID types.String       `tfsdk:"google_analytics_id"`
-	Icon              types.String       `tfsdk:"icon"`
-	ShowPoweredBy     types.Bool         `tfsdk:"show_powered_by"`
-	PublicGroupList   []PublicGroupModel `tfsdk:"public_group_list"`
+	ID               types.Int64       `tfsdk:"id"`
+	Slug             types.String      `tfsdk:"slug"`
+	Title            types.String      `tfsdk:"title"`
+	Description      types.String      `tfsdk:"description"`
+	Theme            types.String      `tfsdk:"theme"`
+	Published        types.Bool        `tfsdk:"published"`
+	ShowTags         types.Bool        `tfsdk:"show_tags"`
+	DomainNameList   []types.String    `tfsdk:"domain_name_list"`
+	FooterText       types.String      `tfsdk:"footer_text"`
+	CustomCSS        types.String      `tfsdk:"custom_css"`
+	GoogleAnalyticsID types.String     `tfsdk:"google_analytics_id"`
+	Icon             types.String      `tfsdk:"icon"`
+	ShowPoweredBy    types.Bool        `tfsdk:"show_powered_by"`
+	PublicGroupList  []PublicGroupModel `tfsdk:"public_group_list"`
 }
 
 func (r *StatusPageResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -70,9 +71,8 @@ func (r *StatusPageResource) Schema(ctx context.Context, req resource.SchemaRequ
 			"id": schema.Int64Attribute{
 				Computed:            true,
 				MarkdownDescription: "Status page identifier",
-				PlanModifiers:       []planmodifier.Int64{
-					// UseStateForUnknown tells Terraform to keep the value from the prior state if it's not explicitly set in the configuration.
-					// This is useful for computed attributes that don't change.
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"slug": schema.StringAttribute{
@@ -141,6 +141,9 @@ func (r *StatusPageResource) Schema(ctx context.Context, req resource.SchemaRequ
 						"id": schema.Int64Attribute{
 							Computed:            true,
 							MarkdownDescription: "Group identifier",
+							PlanModifiers: []planmodifier.Int64{
+								int64planmodifier.UseStateForUnknown(),
+							},
 						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "Group name",
@@ -213,13 +216,6 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 		"message": createResp.Msg,
 	})
 
-	// Now get the status page to find its ID and other details
-	createdPage, err := r.client.GetStatusPage(ctx, data.Slug.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to retrieve created status page: %s", err))
-		return
-	}
-
 	// Now update the status page with all other attributes
 	updateRequest := &client.SaveStatusPageRequest{
 		Title:     data.Title.ValueString(),
@@ -274,10 +270,10 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 				Weight: int(group.Weight.ValueInt64()),
 			}
 
-			// Convert monitor list
-			monitors := make([]int, 0, len(group.MonitorList))
+			// Convert monitor list to StatusPageMonitor objects
+			monitors := make([]client.StatusPageMonitor, 0, len(group.MonitorList))
 			for _, monitorID := range group.MonitorList {
-				monitors = append(monitors, int(monitorID.ValueInt64()))
+				monitors = append(monitors, client.StatusPageMonitor{ID: int(monitorID.ValueInt64())})
 			}
 			newGroup.MonitorList = monitors
 
@@ -293,8 +289,24 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	// Update local state
-	data.ID = types.Int64Value(int64(createdPage.ID))
+	// Re-read the status page to get final state including group IDs
+	finalPage, err := r.client.GetStatusPage(ctx, data.Slug.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created status page: %s", err))
+		return
+	}
+
+	// Update local state with the final values
+	data.ID = types.Int64Value(int64(finalPage.ID))
+
+	// Update public group IDs from the API response
+	if len(finalPage.PublicGroupList) > 0 && len(data.PublicGroupList) > 0 {
+		for i, apiGroup := range finalPage.PublicGroupList {
+			if i < len(data.PublicGroupList) {
+				data.PublicGroupList[i].ID = types.Int64Value(int64(apiGroup.ID))
+			}
+		}
+	}
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -317,46 +329,65 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	// Update model with API data
+	// Update model with API data - preserve null for optional fields not set
 	data.ID = types.Int64Value(int64(statusPage.ID))
 	data.Title = types.StringValue(statusPage.Title)
-	data.Description = types.StringValue(statusPage.Description)
-	data.Theme = types.StringValue(statusPage.Theme)
 	data.Published = types.BoolValue(statusPage.Published)
 	data.ShowTags = types.BoolValue(statusPage.ShowTags)
-
-	// Convert domain names
-	domainNames := make([]types.String, 0, len(statusPage.DomainNameList))
-	for _, domain := range statusPage.DomainNameList {
-		domainNames = append(domainNames, types.StringValue(domain))
-	}
-	data.DomainNameList = domainNames
-
-	data.FooterText = types.StringValue(statusPage.FooterText)
-	data.CustomCSS = types.StringValue(statusPage.CustomCSS)
-	data.GoogleAnalyticsID = types.StringValue(statusPage.GoogleAnalyticsID)
-	data.Icon = types.StringValue(statusPage.Icon)
 	data.ShowPoweredBy = types.BoolValue(statusPage.ShowPoweredBy)
 
-	// Convert public groups
-	groups := make([]PublicGroupModel, 0, len(statusPage.PublicGroupList))
-	for _, apiGroup := range statusPage.PublicGroupList {
-		group := PublicGroupModel{
-			ID:     types.Int64Value(int64(apiGroup.ID)),
-			Name:   types.StringValue(apiGroup.Name),
-			Weight: types.Int64Value(int64(apiGroup.Weight)),
-		}
-
-		// Convert monitor list
-		monitors := make([]types.Int64, 0, len(apiGroup.MonitorList))
-		for _, monitorID := range apiGroup.MonitorList {
-			monitors = append(monitors, types.Int64Value(int64(monitorID)))
-		}
-		group.MonitorList = monitors
-
-		groups = append(groups, group)
+	// Only set optional fields if they have values or were previously set
+	if statusPage.Description != "" || !data.Description.IsNull() {
+		data.Description = types.StringValue(statusPage.Description)
 	}
-	data.PublicGroupList = groups
+	if statusPage.Theme != "" || !data.Theme.IsNull() {
+		data.Theme = types.StringValue(statusPage.Theme)
+	}
+	
+	// Convert domain names - only if there are any or was previously set
+	if len(statusPage.DomainNameList) > 0 || data.DomainNameList != nil {
+		domainNames := make([]types.String, 0, len(statusPage.DomainNameList))
+		for _, domain := range statusPage.DomainNameList {
+			domainNames = append(domainNames, types.StringValue(domain))
+		}
+		data.DomainNameList = domainNames
+	}
+	
+	if statusPage.FooterText != "" || !data.FooterText.IsNull() {
+		data.FooterText = types.StringValue(statusPage.FooterText)
+	}
+	if statusPage.CustomCSS != "" || !data.CustomCSS.IsNull() {
+		data.CustomCSS = types.StringValue(statusPage.CustomCSS)
+	}
+	if statusPage.GoogleAnalyticsID != "" || !data.GoogleAnalyticsID.IsNull() {
+		data.GoogleAnalyticsID = types.StringValue(statusPage.GoogleAnalyticsID)
+	}
+	// Only set icon if it was already set in config (preserve null if not configured)
+	if !data.Icon.IsNull() {
+		data.Icon = types.StringValue(statusPage.Icon)
+	}
+	
+	// Convert public groups - only if there are any or was previously set
+	if len(statusPage.PublicGroupList) > 0 || data.PublicGroupList != nil {
+		groups := make([]PublicGroupModel, 0, len(statusPage.PublicGroupList))
+		for _, apiGroup := range statusPage.PublicGroupList {
+			group := PublicGroupModel{
+				ID:     types.Int64Value(int64(apiGroup.ID)),
+				Name:   types.StringValue(apiGroup.Name),
+				Weight: types.Int64Value(int64(apiGroup.Weight)),
+			}
+			
+			// Convert monitor list (extract ID from StatusPageMonitor objects)
+			monitors := make([]types.Int64, 0, len(apiGroup.MonitorList))
+			for _, monitor := range apiGroup.MonitorList {
+				monitors = append(monitors, types.Int64Value(int64(monitor.ID)))
+			}
+			group.MonitorList = monitors
+			
+			groups = append(groups, group)
+		}
+		data.PublicGroupList = groups
+	}
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -426,10 +457,10 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 				Weight: int(group.Weight.ValueInt64()),
 			}
 
-			// Convert monitor list
-			monitors := make([]int, 0, len(group.MonitorList))
+			// Convert monitor list to StatusPageMonitor objects
+			monitors := make([]client.StatusPageMonitor, 0, len(group.MonitorList))
 			for _, monitorID := range group.MonitorList {
-				monitors = append(monitors, int(monitorID.ValueInt64()))
+				monitors = append(monitors, client.StatusPageMonitor{ID: int(monitorID.ValueInt64())})
 			}
 			newGroup.MonitorList = monitors
 

@@ -20,6 +20,37 @@ Uptime Kuma uses WebSocket for its API rather than a traditional REST API. This 
 
 For a complete setup guide, refer to: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
 
+### ⚠️ Version Compatibility
+
+**Important:** The Uptime Kuma Web API adapter is only compatible with specific versions of Uptime Kuma. Using incompatible versions will result in API errors.
+
+| Uptime Kuma Version | API Adapter Compatibility |
+|---------------------|---------------------------|
+| **1.21.3**          | ✅ Compatible (Recommended) |
+| 1.22.x              | ⚠️ Untested |
+| 1.23.x+             | ❌ Not Compatible |
+
+When using newer versions of Uptime Kuma (1.23.x and above), you may encounter errors like:
+- `request failed with status 500: {"detail":"'version'"}`
+- Various WebSocket API incompatibilities
+
+**We recommend using Uptime Kuma version 1.21.3** for reliable operation with this provider. The included `docker-compose.yml` is pre-configured with the compatible version.
+
+### Quick Start with Docker Compose
+
+The repository includes a `docker-compose.yml` for local development and testing:
+
+```shell
+# Start Uptime Kuma and API adapter
+docker compose up -d
+
+# Open http://localhost:3001 and create an admin account
+# Then set environment variables:
+export UPTIMEKUMA_BASE_URL="http://localhost:8000"
+export UPTIMEKUMA_USERNAME="admin"
+export UPTIMEKUMA_PASSWORD="your-password"
+```
+
 ## Building The Provider
 
 1. Clone the repository
@@ -44,10 +75,10 @@ terraform {
 }
 
 provider "uptimekuma" {
-  base_url = "https://localhost/api/v1/"  # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
-  username = "admin"                      # Username for authentication
-  password = "password"                   # Password for authentication
-  # insecure_https = true                 # Optional: Skip TLS certificate verification
+  base_url = "http://localhost:8000"  # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
+  username = "admin"                  # Username for authentication
+  password = "password"               # Password for authentication
+  # insecure_https = true             # Optional: Skip TLS certificate verification
 }
 
 # Create an HTTP monitor
@@ -234,17 +265,26 @@ go test -v -cover ./...
 
 **Running Acceptance Tests**
 
-Acceptance tests create real resources on your Uptime Kuma instance. These require an actual Uptime Kuma instance and valid credentials:
+Acceptance tests create real resources on your Uptime Kuma instance. These require an actual Uptime Kuma instance with the API adapter running.
 
 ```shell
+# Start the local test environment
+docker compose up -d
+
+# Open http://localhost:3001 and create an admin account (first time only)
+# Username: admin, Password: admin123
+
 # Set required environment variables
 export TF_ACC=1
-export UPTIMEKUMA_BASE_URL="https://localhost/api/v1"
+export UPTIMEKUMA_BASE_URL="http://localhost:8000"  # API adapter URL, not Uptime Kuma directly
 export UPTIMEKUMA_USERNAME="admin"
-export UPTIMEKUMA_PASSWORD="mypassword"
+export UPTIMEKUMA_PASSWORD="admin123"
 
 # Run acceptance tests
 go test -v ./internal/provider
+
+# Clean up when done
+docker compose down -v
 ```
 
 *Note:* Acceptance tests create and destroy real resources. Use with caution on production instances.

@@ -20,6 +20,7 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 
 func testAccPreCheck(t *testing.T) {
 	// Check for required environment variables for acceptance tests
+	// Skip the test if these are not set (standard pattern for optional acceptance tests)
 	requiredEnvVars := []string{
 		"UPTIMEKUMA_BASE_URL",
 		"UPTIMEKUMA_USERNAME",
@@ -28,7 +29,7 @@ func testAccPreCheck(t *testing.T) {
 
 	for _, env := range requiredEnvVars {
 		if v := os.Getenv(env); v == "" {
-			t.Fatalf("%s environment variable must be set for acceptance tests", env)
+			t.Skipf("%s environment variable must be set for acceptance tests", env)
 		}
 	}
 }
