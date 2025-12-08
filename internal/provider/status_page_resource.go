@@ -13,10 +13,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
+	kumastatuspage "github.com/breml/go-uptime-kuma-client/statuspage"
 	"github.com/ehealth-co-id/terraform-provider-uptimekuma/internal/client"
 )
 
@@ -126,6 +128,8 @@ func (r *StatusPageResource) Schema(ctx context.Context, req resource.SchemaRequ
 			"icon": schema.StringAttribute{
 				MarkdownDescription: "Status page icon",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("/icon.svg"),
 			},
 			"show_powered_by": schema.BoolAttribute{
 				MarkdownDescription: "Whether to show 'Powered by Uptime Kuma' text",
@@ -195,115 +199,99 @@ func (r *StatusPageResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	// Create the status page first with just slug and title
-	createRequest := &client.AddStatusPageRequest{
-		Slug:  data.Slug.ValueString(),
-		Title: data.Title.ValueString(),
-	}
+	slug := data.Slug.ValueString()
+	title := data.Title.ValueString()
 
 	tflog.Info(ctx, "Creating status page", map[string]interface{}{
-		"slug":  createRequest.Slug,
-		"title": createRequest.Title,
+		"slug":  slug,
+		"title": title,
 	})
 
-	createResp, err := r.client.CreateStatusPage(ctx, createRequest)
-	if err != nil {
+	// 1. Create Status Page (only takes slug and title)
+	if err := r.client.Kuma.AddStatusPage(ctx, title, slug); err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create status page: %s", err))
 		return
 	}
 
-	tflog.Info(ctx, "Status page created", map[string]interface{}{
-		"message": createResp.Msg,
-	})
-
-	// Now update the status page with all other attributes
-	updateRequest := &client.SaveStatusPageRequest{
-		Title:     data.Title.ValueString(),
-		Published: data.Published.ValueBool(),
-		ShowTags:  data.ShowTags.ValueBool(),
+	// 2. Prepare full status page object for update
+	sp := &kumastatuspage.StatusPage{
+		Slug:              slug,
+		Title:             title,
+		Description:       data.Description.ValueString(),
+		Theme:             data.Theme.ValueString(),
+		Published:         data.Published.ValueBool(),
+		ShowTags:          data.ShowTags.ValueBool(),
+		FooterText:        data.FooterText.ValueString(),
+		CustomCSS:         data.CustomCSS.ValueString(),
+		GoogleAnalyticsID: data.GoogleAnalyticsID.ValueString(),
+		Icon:              data.Icon.ValueString(),
+		ShowPoweredBy:     data.ShowPoweredBy.ValueBool(),
 	}
 
-	// Set optional fields
-	if !data.Description.IsNull() {
-		updateRequest.Description = data.Description.ValueString()
-	}
-
-	if !data.Theme.IsNull() {
-		updateRequest.Theme = data.Theme.ValueString()
-	}
-
-	// Convert domain name list
+	// Domain Names
+	sp.DomainNameList = []string{}
 	if len(data.DomainNameList) > 0 {
-		domainNames := make([]string, 0, len(data.DomainNameList))
-		for _, domain := range data.DomainNameList {
-			domainNames = append(domainNames, domain.ValueString())
+		sp.DomainNameList = make([]string, len(data.DomainNameList))
+		for i, v := range data.DomainNameList {
+			sp.DomainNameList[i] = v.ValueString()
 		}
-		updateRequest.DomainNameList = domainNames
 	}
 
-	if !data.FooterText.IsNull() {
-		updateRequest.FooterText = data.FooterText.ValueString()
-	}
-
-	if !data.CustomCSS.IsNull() {
-		updateRequest.CustomCSS = data.CustomCSS.ValueString()
-	}
-
-	if !data.GoogleAnalyticsID.IsNull() {
-		updateRequest.GoogleAnalyticsID = data.GoogleAnalyticsID.ValueString()
-	}
-
-	if !data.Icon.IsNull() {
-		updateRequest.Icon = data.Icon.ValueString()
-	}
-
-	if !data.ShowPoweredBy.IsNull() {
-		updateRequest.ShowPoweredBy = data.ShowPoweredBy.ValueBool()
-	}
-
-	// Add public groups
+	// Public Groups
+	sp.PublicGroupList = []kumastatuspage.PublicGroup{}
 	if len(data.PublicGroupList) > 0 {
-		groups := make([]client.PublicGroup, 0, len(data.PublicGroupList))
-		for _, group := range data.PublicGroupList {
-			newGroup := client.PublicGroup{
-				Name:   group.Name.ValueString(),
-				Weight: int(group.Weight.ValueInt64()),
+		sp.PublicGroupList = make([]kumastatuspage.PublicGroup, len(data.PublicGroupList))
+		for i, g := range data.PublicGroupList {
+			pg := kumastatuspage.PublicGroup{
+				Name:        g.Name.ValueString(),
+				Weight:      int(g.Weight.ValueInt64()),
+				MonitorList: []kumastatuspage.PublicMonitor{},
 			}
 
-			// Convert monitor list to StatusPageMonitor objects
-			monitors := make([]client.StatusPageMonitor, 0, len(group.MonitorList))
-			for _, monitorID := range group.MonitorList {
-				monitors = append(monitors, client.StatusPageMonitor{ID: int(monitorID.ValueInt64())})
+			if len(g.MonitorList) > 0 {
+				pg.MonitorList = make([]kumastatuspage.PublicMonitor, len(g.MonitorList))
+				for j, mid := range g.MonitorList {
+					pg.MonitorList[j] = kumastatuspage.PublicMonitor{
+						ID: mid.ValueInt64(),
+					}
+				}
 			}
-			newGroup.MonitorList = monitors
-
-			groups = append(groups, newGroup)
+			sp.PublicGroupList[i] = pg
 		}
-		updateRequest.PublicGroupList = groups
 	}
 
-	// Update the status page with all attributes
-	_, err = r.client.UpdateStatusPage(ctx, data.Slug.ValueString(), updateRequest)
+	// 3. Update (Save) the status page
+	publicGroups, err := r.client.Kuma.SaveStatusPage(ctx, sp)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update status page attributes: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to save status page details: %s", err))
+		// Should we rollback?
 		return
 	}
 
-	// Re-read the status page to get final state including group IDs
-	finalPage, err := r.client.GetStatusPage(ctx, data.Slug.ValueString())
+	// 4. Read back to get Status Page ID?
+	// SaveStatusPage returns PublicGroups but not the page ID.
+	fetchedSP, err := r.client.Kuma.GetStatusPage(ctx, slug)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created status page: %s", err))
 		return
 	}
 
-	// Update local state with the final values
-	data.ID = types.Int64Value(int64(finalPage.ID))
+	// 5. Update state
+	data.ID = types.Int64Value(fetchedSP.ID)
 
-	// Update public group IDs from the API response
-	if len(finalPage.PublicGroupList) > 0 && len(data.PublicGroupList) > 0 {
-		for i, apiGroup := range finalPage.PublicGroupList {
+	// Map back groups to get their IDs
+	// Use returned publicGroups if available (it has IDs) or fetchedSP
+	if len(fetchedSP.PublicGroupList) > 0 && len(data.PublicGroupList) > 0 {
+		for i, apiGroup := range fetchedSP.PublicGroupList {
 			if i < len(data.PublicGroupList) {
-				data.PublicGroupList[i].ID = types.Int64Value(int64(apiGroup.ID))
+				data.PublicGroupList[i].ID = types.Int64Value(apiGroup.ID)
+			}
+		}
+	} else if len(publicGroups) > 0 && len(data.PublicGroupList) > 0 {
+		// Use publicGroups returned from SaveStatusPage if fetchedSP fails or as backup
+		for i, apiGroup := range publicGroups {
+			if i < len(data.PublicGroupList) {
+				data.PublicGroupList[i].ID = types.Int64Value(apiGroup.ID)
 			}
 		}
 	}
@@ -322,71 +310,140 @@ func (r *StatusPageResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
+	slug := data.Slug.ValueString()
+
 	// Read status page from API
-	statusPage, err := r.client.GetStatusPage(ctx, data.Slug.ValueString())
+	sp, err := r.client.Kuma.GetStatusPage(ctx, slug)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read status page '%s': %s", data.Slug.ValueString(), err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read status page '%s': %s", slug, err))
 		return
 	}
 
-	// Update model with API data - preserve null for optional fields not set
-	data.ID = types.Int64Value(int64(statusPage.ID))
-	data.Title = types.StringValue(statusPage.Title)
-	data.Published = types.BoolValue(statusPage.Published)
-	data.ShowTags = types.BoolValue(statusPage.ShowTags)
-	data.ShowPoweredBy = types.BoolValue(statusPage.ShowPoweredBy)
-
-	// Only set optional fields if they have values or were previously set
-	if statusPage.Description != "" || !data.Description.IsNull() {
-		data.Description = types.StringValue(statusPage.Description)
-	}
-	if statusPage.Theme != "" || !data.Theme.IsNull() {
-		data.Theme = types.StringValue(statusPage.Theme)
+	if sp == nil { // Probably handled by err, but just in case
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	// Convert domain names - only if there are any or was previously set
-	if len(statusPage.DomainNameList) > 0 || data.DomainNameList != nil {
-		domainNames := make([]types.String, 0, len(statusPage.DomainNameList))
-		for _, domain := range statusPage.DomainNameList {
-			domainNames = append(domainNames, types.StringValue(domain))
+	// Map API response to model
+	data.ID = types.Int64Value(sp.ID)
+	data.Title = types.StringValue(sp.Title)
+
+	if sp.Description != "" {
+		data.Description = types.StringValue(sp.Description)
+	} else {
+		data.Description = types.StringNull()
+	}
+
+	if sp.Theme != "" {
+		data.Theme = types.StringValue(sp.Theme)
+	} else {
+		data.Theme = types.StringNull()
+	}
+
+	data.Published = types.BoolValue(sp.Published)
+	data.ShowTags = types.BoolValue(sp.ShowTags)
+
+	if sp.FooterText != "" {
+		data.FooterText = types.StringValue(sp.FooterText)
+	} else {
+		data.FooterText = types.StringNull()
+	}
+
+	if sp.CustomCSS != "" {
+		data.CustomCSS = types.StringValue(sp.CustomCSS)
+	} else {
+		data.CustomCSS = types.StringNull()
+	}
+
+	if sp.GoogleAnalyticsID != "" {
+		data.GoogleAnalyticsID = types.StringValue(sp.GoogleAnalyticsID)
+	} else {
+		data.GoogleAnalyticsID = types.StringNull()
+	}
+
+	if sp.Icon != "" {
+		data.Icon = types.StringValue(sp.Icon)
+	} else {
+		data.Icon = types.StringNull()
+	}
+
+	data.ShowPoweredBy = types.BoolValue(sp.ShowPoweredBy)
+
+	// Domain Names
+	if len(sp.DomainNameList) > 0 {
+		outDomains := make([]types.String, len(sp.DomainNameList))
+		for i, v := range sp.DomainNameList {
+			outDomains[i] = types.StringValue(v)
 		}
-		data.DomainNameList = domainNames
+		data.DomainNameList = outDomains
 	}
 
-	if statusPage.FooterText != "" || !data.FooterText.IsNull() {
-		data.FooterText = types.StringValue(statusPage.FooterText)
-	}
-	if statusPage.CustomCSS != "" || !data.CustomCSS.IsNull() {
-		data.CustomCSS = types.StringValue(statusPage.CustomCSS)
-	}
-	if statusPage.GoogleAnalyticsID != "" || !data.GoogleAnalyticsID.IsNull() {
-		data.GoogleAnalyticsID = types.StringValue(statusPage.GoogleAnalyticsID)
-	}
-	// Only set icon if it was already set in config (preserve null if not configured)
-	if !data.Icon.IsNull() {
-		data.Icon = types.StringValue(statusPage.Icon)
+	// Public Groups
+	// GetStatusPage says "PublicGroupList must be maintained separately" in comment (Step 259)
+	// But `GetStatusPage` return struct has `PublicGroupList`.
+	// Although checking library code (Step 259, Line 28 comment): "Note: The server does not return PublicGroupList in this endpoint."
+	// Wait, if it doesn't return PublicGroupList, we lose that state on Read!
+	// This is a known issue in Uptime Kuma v1 API?
+	// But `client.state.statusPages` cache might have it?
+	// `GetStatusPage` calls `syncEmit("getStatusPage")`.
+
+	// If the API doesn't return PublicGroups on Get, how do we Read them?
+	// Maybe `GetStatusPages` (plural) returns everything?
+	// `GetMonitor` returns monitor list via state.
+	// `GetStatusPages` uses `c.state.statusPages`.
+
+	// Let's check `GetStatusPages` again.
+	// Line 11: returns map.
+	// The state is updated via socket events.
+	// If we use `GetStatusPages`, we rely on cache.
+	// But `GetStatusPage(slug)` calls API directly.
+
+	// If `GetStatusPage(slug)` returns incomplete data, we have a problem.
+	// However, `go-uptime-kuma-client` `GetStatusPage` implementation calls `emit("getStatusPage")`.
+	// Does `getStatusPage` event return groups?
+	// The comment says no.
+
+	// If so, we might need to rely on `GetStatusPages` (plural) from state if available?
+	// But `GetStatusPages` needs state populate.
+	// The client connects and performs full sync. So `c.state.statusPages` should be populated.
+	// So maybe we should iterate `GetStatusPages` to find our slug?
+
+	// Try to find matching page in cache which might have more details
+	// If `getStatusPage` API is limited.
+	allPages, err := r.client.Kuma.GetStatusPages(ctx)
+	if err == nil {
+		for _, page := range allPages {
+			if page.Slug == slug {
+				sp.PublicGroupList = page.PublicGroupList
+				break
+			}
+		}
 	}
 
-	// Convert public groups - only if there are any or was previously set
-	if len(statusPage.PublicGroupList) > 0 || data.PublicGroupList != nil {
-		groups := make([]PublicGroupModel, 0, len(statusPage.PublicGroupList))
-		for _, apiGroup := range statusPage.PublicGroupList {
-			group := PublicGroupModel{
-				ID:     types.Int64Value(int64(apiGroup.ID)),
-				Name:   types.StringValue(apiGroup.Name),
-				Weight: types.Int64Value(int64(apiGroup.Weight)),
+	if len(sp.PublicGroupList) > 0 {
+		outGroups := make([]PublicGroupModel, len(sp.PublicGroupList))
+		for i, g := range sp.PublicGroupList {
+			pgModel := PublicGroupModel{
+				ID:     types.Int64Value(g.ID),
+				Name:   types.StringValue(g.Name),
+				Weight: types.Int64Value(int64(g.Weight)),
 			}
 
-			// Convert monitor list (extract ID from StatusPageMonitor objects)
-			monitors := make([]types.Int64, 0, len(apiGroup.MonitorList))
-			for _, monitor := range apiGroup.MonitorList {
-				monitors = append(monitors, types.Int64Value(int64(monitor.ID)))
+			if len(g.MonitorList) > 0 {
+				mList := make([]types.Int64, len(g.MonitorList))
+				for j, m := range g.MonitorList {
+					mList[j] = types.Int64Value(m.ID)
+				}
+				pgModel.MonitorList = mList
 			}
-			group.MonitorList = monitors
-
-			groups = append(groups, group)
+			outGroups[i] = pgModel
 		}
-		data.PublicGroupList = groups
+		data.PublicGroupList = outGroups
+	} else {
+		// If no groups found in API/Cache, preserve existing state.
+		// We cannot distinguish between "groups deleted" and "API didn't return groups".
+		// We assume Terraform manages the state.
+		tflog.Warn(ctx, fmt.Sprintf("No public groups found for status page '%s' in API/Cache; preserving state", slug))
 	}
 
 	// Save updated data into Terraform state
@@ -403,95 +460,70 @@ func (r *StatusPageResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	// Prepare update request
-	updateRequest := &client.SaveStatusPageRequest{
-		Title:     data.Title.ValueString(),
-		Published: data.Published.ValueBool(),
-		ShowTags:  data.ShowTags.ValueBool(),
+	slug := data.Slug.ValueString()
+
+	// Prepare update
+	sp := &kumastatuspage.StatusPage{
+		Slug:              slug,
+		Title:             data.Title.ValueString(),
+		Description:       data.Description.ValueString(),
+		Theme:             data.Theme.ValueString(),
+		Published:         data.Published.ValueBool(),
+		ShowTags:          data.ShowTags.ValueBool(),
+		FooterText:        data.FooterText.ValueString(),
+		CustomCSS:         data.CustomCSS.ValueString(),
+		GoogleAnalyticsID: data.GoogleAnalyticsID.ValueString(),
+		Icon:              data.Icon.ValueString(),
+		ShowPoweredBy:     data.ShowPoweredBy.ValueBool(),
 	}
 
-	// Set optional fields
-	if !data.Description.IsNull() {
-		updateRequest.Description = data.Description.ValueString()
-	}
-
-	if !data.Theme.IsNull() {
-		updateRequest.Theme = data.Theme.ValueString()
-	}
-
-	// Convert domain name list
+	// Domain Names
+	sp.DomainNameList = []string{}
 	if len(data.DomainNameList) > 0 {
-		domainNames := make([]string, 0, len(data.DomainNameList))
-		for _, domain := range data.DomainNameList {
-			domainNames = append(domainNames, domain.ValueString())
+		sp.DomainNameList = make([]string, len(data.DomainNameList))
+		for i, v := range data.DomainNameList {
+			sp.DomainNameList[i] = v.ValueString()
 		}
-		updateRequest.DomainNameList = domainNames
 	}
 
-	if !data.FooterText.IsNull() {
-		updateRequest.FooterText = data.FooterText.ValueString()
-	}
-
-	if !data.CustomCSS.IsNull() {
-		updateRequest.CustomCSS = data.CustomCSS.ValueString()
-	}
-
-	if !data.GoogleAnalyticsID.IsNull() {
-		updateRequest.GoogleAnalyticsID = data.GoogleAnalyticsID.ValueString()
-	}
-
-	if !data.Icon.IsNull() {
-		updateRequest.Icon = data.Icon.ValueString()
-	}
-
-	if !data.ShowPoweredBy.IsNull() {
-		updateRequest.ShowPoweredBy = data.ShowPoweredBy.ValueBool()
-	}
-
-	// Add public groups
+	// Public Groups
+	sp.PublicGroupList = []kumastatuspage.PublicGroup{}
 	if len(data.PublicGroupList) > 0 {
-		groups := make([]client.PublicGroup, 0, len(data.PublicGroupList))
-		for _, group := range data.PublicGroupList {
-			newGroup := client.PublicGroup{
-				Name:   group.Name.ValueString(),
-				Weight: int(group.Weight.ValueInt64()),
+		sp.PublicGroupList = make([]kumastatuspage.PublicGroup, len(data.PublicGroupList))
+		for i, g := range data.PublicGroupList {
+			pg := kumastatuspage.PublicGroup{
+				Name:        g.Name.ValueString(),
+				Weight:      int(g.Weight.ValueInt64()),
+				MonitorList: []kumastatuspage.PublicMonitor{},
+			}
+			if !g.ID.IsNull() {
+				pg.ID = g.ID.ValueInt64()
 			}
 
-			// Convert monitor list to StatusPageMonitor objects
-			monitors := make([]client.StatusPageMonitor, 0, len(group.MonitorList))
-			for _, monitorID := range group.MonitorList {
-				monitors = append(monitors, client.StatusPageMonitor{ID: int(monitorID.ValueInt64())})
+			if len(g.MonitorList) > 0 {
+				pg.MonitorList = make([]kumastatuspage.PublicMonitor, len(g.MonitorList))
+				for j, mid := range g.MonitorList {
+					pg.MonitorList[j] = kumastatuspage.PublicMonitor{
+						ID: mid.ValueInt64(),
+					}
+				}
 			}
-			newGroup.MonitorList = monitors
-
-			groups = append(groups, newGroup)
+			sp.PublicGroupList[i] = pg
 		}
-		updateRequest.PublicGroupList = groups
 	}
 
-	// Update the status page
-	tflog.Info(ctx, "Updating status page", map[string]interface{}{
-		"slug": data.Slug.ValueString(),
-	})
-
-	_, err := r.client.UpdateStatusPage(ctx, data.Slug.ValueString(), updateRequest)
+	// Update (Save) the status page
+	publicGroups, err := r.client.Kuma.SaveStatusPage(ctx, sp)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update status page: %s", err))
 		return
 	}
 
-	// Refresh the data from the API
-	updatedPage, err := r.client.GetStatusPage(ctx, data.Slug.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated status page: %s", err))
-		return
-	}
-
-	// Update the resource's groups with their IDs from the API
-	if len(updatedPage.PublicGroupList) > 0 && len(data.PublicGroupList) > 0 {
-		for i, apiGroup := range updatedPage.PublicGroupList {
+	// Update IDs from response
+	if len(publicGroups) > 0 && len(data.PublicGroupList) > 0 {
+		for i, apiGroup := range publicGroups {
 			if i < len(data.PublicGroupList) {
-				data.PublicGroupList[i].ID = types.Int64Value(int64(apiGroup.ID))
+				data.PublicGroupList[i].ID = types.Int64Value(apiGroup.ID)
 			}
 		}
 	}
@@ -510,14 +542,11 @@ func (r *StatusPageResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	// Delete the status page
-	tflog.Info(ctx, "Deleting status page", map[string]interface{}{
-		"slug": data.Slug.ValueString(),
-	})
+	slug := data.Slug.ValueString()
 
-	_, err := r.client.DeleteStatusPage(ctx, data.Slug.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete status page '%s': %s", data.Slug.ValueString(), err))
+	// Delete the status page
+	if err := r.client.Kuma.DeleteStatusPage(ctx, slug); err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete status page '%s': %s", slug, err))
 		return
 	}
 }

@@ -5,131 +5,105 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"math"
+	"math/rand"
+	"os"
 	"time"
+
+	kuma "github.com/breml/go-uptime-kuma-client"
 )
 
 // Config holds the configuration for the Uptime Kuma client.
 type Config struct {
-	BaseURL          string
-	Username         string
-	Password         string
-	Timeout          time.Duration
-	InsecureHTTPS    bool
-	CustomHTTPClient *http.Client
+	BaseURL              string
+	Username             string
+	Password             string
+	EnableConnectionPool bool // Enable connection pooling (test-only)
 }
 
 // Client is the API client for Uptime Kuma.
 type Client struct {
-	config     *Config
-	authClient *AuthClient
-	httpClient *http.Client
+	Kuma *kuma.Client
+	// Mutex is handled internally by the library
 }
 
 // New creates a new Uptime Kuma API client.
+// If connection pooling is enabled (via config or environment variable),
+// it returns a shared connection from the pool. Otherwise, it creates
+// a new direct connection with retry logic.
 func New(config *Config) (*Client, error) {
-	// Validate config
 	if config.BaseURL == "" {
 		return nil, fmt.Errorf("base URL is required")
 	}
-	if config.Username == "" {
-		return nil, fmt.Errorf("username is required")
-	}
-	if config.Password == "" {
-		return nil, fmt.Errorf("password is required")
-	}
 
-	// Set defaults
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
+	// Check if connection pooling is enabled (test-only feature)
+	// Priority: config flag > environment variable
+	poolEnabled := config.EnableConnectionPool
+	if !poolEnabled {
+		// Check environment variable as fallback
+		poolEnabled = (os.Getenv("UPTIMEKUMA_ENABLE_CONNECTION_POOL") == "true")
 	}
 
-	// Create HTTP client
-	httpClient := config.CustomHTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: config.Timeout,
-		}
+	if poolEnabled {
+		// Use connection pool (test scenarios)
+		pool := GetGlobalPool()
+		return pool.GetOrCreate(config)
 	}
 
-	// Create auth client
-	authClient := NewAuthClient(
-		config.BaseURL,
-		config.Username,
-		config.Password,
-		httpClient,
-	)
-
-	// Create API client with authenticated http client
-	return &Client{
-		config:     config,
-		authClient: authClient,
-		httpClient: authClient.AuthenticatedClient(),
-	}, nil
+	// Create new direct connection (production scenarios)
+	return newClientDirect(config)
 }
 
-// doRequest performs an HTTP request and decodes the response.
-func (c *Client) doRequest(ctx context.Context, method, path string, body io.Reader, result interface{}) error {
-	// Create request
-	url := fmt.Sprintf("%s%s", c.config.BaseURL, path)
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+// newClientDirect creates a new direct connection with retry logic.
+// This is the original New() implementation, now extracted for reuse.
+func newClientDirect(config *Config) (*Client, error) {
+	ctx := context.Background() // TODO: Should we pass context in?
 
-	// Set common headers
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	// Retry configuration
+	maxRetries := 5
+	baseDelay := 5 * time.Second
 
-	// Execute request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
+	var k *kuma.Client
+	var err error
 
-	// Check status code
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Decode response if result is provided
-	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
+	for i := 0; i <= maxRetries; i++ {
+		k, err = kuma.New(ctx, config.BaseURL, config.Username, config.Password)
+		if err == nil {
+			return &Client{
+				Kuma: k,
+			}, nil
 		}
+
+		if i == maxRetries {
+			break
+		}
+
+		// Calculate backoff with jitter
+		// backoff = base * 2^i
+		backoff := float64(baseDelay) * math.Pow(2, float64(i))
+
+		// Jitter: +/- 20%
+		// r = 0.8 to 1.2
+		r := rand.Float64()*0.4 + 0.8
+		sleepDuration := time.Duration(backoff * r)
+
+		// Cap at 30 seconds
+		if sleepDuration > 30*time.Second {
+			sleepDuration = 30 * time.Second
+		}
+
+		fmt.Printf("Connection failed (attempt %d/%d): %v. Retrying in %v...\n", i+1, maxRetries+1, err, sleepDuration)
+		time.Sleep(sleepDuration)
 	}
 
+	return nil, fmt.Errorf("failed to connect to Uptime Kuma after %d attempts: %w", maxRetries+1, err)
+}
+
+// Disconnect closes the connection.
+func (c *Client) Disconnect() error {
+	if c.Kuma != nil {
+		return c.Kuma.Disconnect()
+	}
 	return nil
-}
-
-// Get performs a GET request.
-func (c *Client) Get(ctx context.Context, path string, result interface{}) error {
-	return c.doRequest(ctx, http.MethodGet, path, nil, result)
-}
-
-// Post performs a POST request.
-func (c *Client) Post(ctx context.Context, path string, body io.Reader, result interface{}) error {
-	return c.doRequest(ctx, http.MethodPost, path, body, result)
-}
-
-// Put performs a PUT request.
-func (c *Client) Put(ctx context.Context, path string, body io.Reader, result interface{}) error {
-	return c.doRequest(ctx, http.MethodPut, path, body, result)
-}
-
-// Patch performs a PATCH request.
-func (c *Client) Patch(ctx context.Context, path string, body io.Reader, result interface{}) error {
-	return c.doRequest(ctx, http.MethodPatch, path, body, result)
-}
-
-// Delete performs a DELETE request.
-func (c *Client) Delete(ctx context.Context, path string, result interface{}) error {
-	return c.doRequest(ctx, http.MethodDelete, path, nil, result)
 }

@@ -126,53 +126,18 @@ jobs:
           UPTIME_KUMA_ADMIN_PASSWORD: admin123
         run: node setup-uptime-kuma.js
 
-      - name: Wait for API adapter to connect
-        run: |
-          echo "Waiting for API adapter to connect..."
-          for i in {1..30}; do
-            # Check if API is responding
-            if curl -s http://localhost:8000/docs > /dev/null; then
-              echo "API adapter is ready!"
-              break
-            fi
-            echo "Attempt $i/30 - waiting..."
-            sleep 2
-          done
-          # Give it more time to fully connect and stabilize
-          sleep 10
-
-      - name: Verify API authentication
-        run: |
-          echo "Testing API authentication..."
-          for i in {1..5}; do
-            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8000/login/access-token \
-              -d "username=admin&password=admin123")
-            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "API authentication successful!"
-              exit 0
-            fi
-            echo "Attempt $i/5 - HTTP $HTTP_CODE, retrying..."
-            sleep 5
-          done
-          echo "API authentication failed after 5 attempts"
-          exit 1
-
       - name: Show Docker logs
         if: always()
         run: |
           echo "=== Uptime Kuma logs ==="
           docker logs uptime-kuma 2>&1 | tail -50
-          echo ""
-          echo "=== API adapter logs ==="
-          docker logs uptime-kuma-api 2>&1 | tail -50
 
       - run: go mod download
 
       - name: Run acceptance tests
         env:
           TF_ACC: "1"
-          UPTIMEKUMA_BASE_URL: "http://localhost:8000"
+          UPTIMEKUMA_BASE_URL: "http://localhost:3001"
           UPTIMEKUMA_USERNAME: "admin"
           UPTIMEKUMA_PASSWORD: "admin123"
         # Use -p 1 to run tests sequentially and avoid rate limiting
@@ -184,9 +149,6 @@ jobs:
         run: |
           echo "=== Uptime Kuma logs ==="
           docker logs uptime-kuma 2>&1
-          echo ""
-          echo "=== API adapter logs ==="
-          docker logs uptime-kuma-api 2>&1
 
       - name: Cleanup
         if: always()

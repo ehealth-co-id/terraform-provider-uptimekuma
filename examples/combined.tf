@@ -2,16 +2,16 @@
 terraform {
   required_providers {
     uptimekuma = {
-      source = "ehealth-co-id/uptimekuma"
+      source  = "ehealth-co-id/uptimekuma"
+      version = "~> 1.0"
     }
   }
 }
 
 provider "uptimekuma" {
-  base_url       = "https://localhost/api/v1/" # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
-  username       = "admin"                     # Username for authentication
-  password       = "password"                  # Password for authentication
-  insecure_https = true                        # Optional: Skip TLS certificate verification
+  base_url = "http://localhost:3001" # Direct Uptime Kuma URL
+  username = "admin"
+  password = "password"
 }
 
 # Create HTTP monitors for different services

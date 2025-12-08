@@ -16,8 +16,10 @@ make test
 
 # Run acceptance tests (requires Uptime Kuma running)
 docker compose up -d
-# Wait for setup, then:
-export UPTIMEKUMA_BASE_URL="http://localhost:8000"
+# Run setup script:
+node scripts/setup-uptime-kuma.js
+# Then set environment variables:
+export UPTIMEKUMA_BASE_URL="http://localhost:3001"
 export UPTIMEKUMA_USERNAME="admin"
 export UPTIMEKUMA_PASSWORD="admin123"
 make testacc

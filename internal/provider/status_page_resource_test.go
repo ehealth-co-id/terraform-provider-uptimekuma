@@ -181,3 +181,96 @@ resource "uptimekuma_status_page" "with_groups" {
 		os.Getenv("UPTIMEKUMA_PASSWORD"),
 		slug, title)
 }
+
+// New test for status page theme and customization.
+func TestAccStatusPageThemeUpdate(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccStatusPageThemeUpdateConfig("theme-test", "Theme Test", "dark"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_status_page.theme_test",
+						tfjsonpath.New("theme"),
+						knownvalue.StringExact("dark"),
+					),
+				},
+			},
+			// Update theme
+			{
+				Config: testAccStatusPageThemeUpdateConfig("theme-test", "Theme Test", "light"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_status_page.theme_test",
+						tfjsonpath.New("theme"),
+						knownvalue.StringExact("light"),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccStatusPageThemeUpdateConfig(slug, title, theme string) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_status_page" "theme_test" {
+  slug  = %[4]q
+  title = %[5]q
+  theme = %[6]q
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		slug, title, theme)
+}
+
+// New test for custom CSS and footer.
+func TestAccStatusPageCustomization(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccStatusPageCustomizationConfig("custom-test", "Custom Test"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_status_page.custom_test",
+						tfjsonpath.New("footer_text"),
+						knownvalue.StringExact("© 2025 Test Company"),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccStatusPageCustomizationConfig(slug, title string) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_status_page" "custom_test" {
+  slug        = %[4]q
+  title       = %[5]q
+  footer_text = "© 2025 Test Company"
+  custom_css  = ".header { background: #000; }"
+  show_tags   = true
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		slug, title)
+}

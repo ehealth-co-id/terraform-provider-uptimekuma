@@ -81,16 +81,15 @@ func (p *UptimeKumaProvider) Configure(ctx context.Context, req provider.Configu
 	baseURL := data.BaseURL.ValueString()
 	username := data.Username.ValueString()
 	password := data.Password.ValueString()
-	insecureHTTPS := false
-	if !data.InsecureHTTPS.IsNull() {
-		insecureHTTPS = data.InsecureHTTPS.ValueBool()
-	}
+	// insecureHTTPS := false
+	// if !data.InsecureHTTPS.IsNull() {
+	// 	insecureHTTPS = data.InsecureHTTPS.ValueBool()
+	// }
 
 	config := &client.Config{
-		BaseURL:       baseURL,
-		Username:      username,
-		Password:      password,
-		InsecureHTTPS: insecureHTTPS,
+		BaseURL:  baseURL,
+		Username: username,
+		Password: password,
 	}
 
 	// Create client
@@ -113,6 +112,7 @@ func (p *UptimeKumaProvider) Resources(ctx context.Context) []func() resource.Re
 	return []func() resource.Resource{
 		NewMonitorResource,
 		NewStatusPageResource,
+		NewTagResource,
 	}
 }
 

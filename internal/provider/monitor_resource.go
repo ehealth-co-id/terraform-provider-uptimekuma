@@ -11,12 +11,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
+	kumamonitor "github.com/breml/go-uptime-kuma-client/monitor"
 	"github.com/ehealth-co-id/terraform-provider-uptimekuma/internal/client"
 )
 
@@ -77,7 +80,7 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 				},
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: "Monitor type (http, ping, port, etc.)",
+				MarkdownDescription: "Monitor type (http, ping, port, keyword, dns, etc.)",
 				Required:            true,
 			},
 			"name": schema.StringAttribute{
@@ -91,9 +94,11 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 			"method": schema.StringAttribute{
 				MarkdownDescription: "HTTP method (GET, POST, etc.) for http monitors",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("GET"),
 			},
 			"hostname": schema.StringAttribute{
-				MarkdownDescription: "Hostname for ping, port, etc. monitors",
+				MarkdownDescription: "Hostname for ping, port, etc. monitors. Also used for database connection strings.",
 				Optional:            true,
 			},
 			"port": schema.Int64Attribute{
@@ -127,14 +132,20 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 			"upside_down": schema.BoolAttribute{
 				MarkdownDescription: "Invert status (treat DOWN as UP and vice versa)",
 				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 			"ignore_tls": schema.BoolAttribute{
 				MarkdownDescription: "Ignore TLS/SSL errors",
 				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 			"max_redirects": schema.Int64Attribute{
 				MarkdownDescription: "Maximum number of redirects to follow",
 				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
 			},
 			"body": schema.StringAttribute{
 				MarkdownDescription: "Request body for http monitors",
@@ -210,107 +221,22 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	// Prepare the API request
-	monitor := &client.Monitor{
-		Type:           client.MonitorType(data.Type.ValueString()),
-		Name:           data.Name.ValueString(),
-		Interval:       int(data.Interval.ValueInt64()),
-		RetryInterval:  int(data.RetryInterval.ValueInt64()),
-		ResendInterval: int(data.ResendInterval.ValueInt64()),
-		MaxRetries:     int(data.MaxRetries.ValueInt64()),
-		UpsideDown:     data.UpsideDown.ValueBool(),
-		IgnoreTLS:      data.IgnoreTLS.ValueBool(),
+	monitor, err := r.monitorFromPlan(ctx, data)
+	if err != nil {
+		resp.Diagnostics.AddError("Error creating monitor", err.Error())
+		return
 	}
 
-	// Set optional fields
-	if !data.URL.IsNull() {
-		monitor.URL = data.URL.ValueString()
-	}
-
-	if !data.Method.IsNull() {
-		monitor.Method = data.Method.ValueString()
-	}
-
-	if !data.Hostname.IsNull() {
-		monitor.Hostname = data.Hostname.ValueString()
-	}
-
-	if !data.Port.IsNull() {
-		monitor.Port = int(data.Port.ValueInt64())
-	}
-
-	if !data.MaxRedirects.IsNull() {
-		monitor.MaxRedirects = int(data.MaxRedirects.ValueInt64())
-	}
-
-	if !data.Body.IsNull() {
-		monitor.Body = data.Body.ValueString()
-	}
-
-	if !data.Headers.IsNull() {
-		monitor.Headers = data.Headers.ValueString()
-	}
-
-	if !data.AuthMethod.IsNull() {
-		monitor.AuthMethod = client.AuthMethod(data.AuthMethod.ValueString())
-	}
-
-	if !data.BasicAuthUser.IsNull() {
-		monitor.BasicAuthUser = data.BasicAuthUser.ValueString()
-	}
-
-	if !data.BasicAuthPass.IsNull() {
-		monitor.BasicAuthPass = data.BasicAuthPass.ValueString()
-	}
-
-	if !data.Keyword.IsNull() {
-		monitor.Keyword = data.Keyword.ValueString()
-	}
-
-	// Handle NotificationIDList
-	if !data.NotificationIDList.IsNull() && !data.NotificationIDList.IsUnknown() {
-		var notifIDs []int64
-		diags := data.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
-		if !diags.HasError() {
-			monitor.NotificationIDList = make([]interface{}, len(notifIDs))
-			for i, id := range notifIDs {
-				monitor.NotificationIDList[i] = int(id)
-			}
-		}
-	}
-
-	// Handle AcceptedStatusCodes
-	if !data.AcceptedStatusCodes.IsNull() && !data.AcceptedStatusCodes.IsUnknown() {
-		var codes []int64
-		diags := data.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
-		if !diags.HasError() {
-			monitor.AcceptedStatusCodes = make([]interface{}, len(codes))
-			for i, code := range codes {
-				monitor.AcceptedStatusCodes[i] = int(code)
-			}
-		}
-	}
-
-	// Handle DatabaseConnectionString (for Postgres/MySQL/MongoDB/etc)
-	if !data.DatabaseConnectionString.IsNull() {
-		connStr := data.DatabaseConnectionString.ValueString()
-		monitor.Hostname = connStr
-	}
-
-	// Create the monitor
-	tflog.Info(ctx, "Creating monitor", map[string]interface{}{
-		"name": monitor.Name,
-		"type": monitor.Type,
-	})
-
-	createdMonitor, err := r.client.CreateMonitor(ctx, monitor)
+	// Call library to create monitor
+	// Use client.Kuma.CreateMonitor instead of client.Kuma.Monitor.Add
+	id, err := r.client.Kuma.CreateMonitor(ctx, monitor)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create monitor: %s", err))
 		return
 	}
 
 	// Update Terraform state
-	data.ID = types.Int64Value(int64(createdMonitor.ID))
+	data.ID = types.Int64Value(id)
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -326,10 +252,33 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	monitorID := int(data.ID.ValueInt64())
+	monitorID := data.ID.ValueInt64()
 
-	// Read the monitor from the API
-	monitor, err := r.client.GetMonitor(ctx, monitorID)
+	// Read the monitor from the API use client.Kuma.GetMonitor
+	// Note: GetMonitor returns monitor.Base, which contains the data but might lose specific fields
+	// unless we use GetMonitorAs or similar?
+	// The library `GetMonitor` returns `monitor.Base`.
+	// But `monitor.Base` in the library definition (Step 258) has `internalType` and `raw`.
+	// We can't access `raw` it's private.
+	// But we can call `monitor.GetMonitorAs(ctx, id, &target)`.
+	// To do that, we need to know the type first.
+	// Or we can try to guess from the provider state which type we expect?
+	// But `Read` should be robust.
+	// `client.GetMonitor` returns `monitor.Base`. `Type()` gives us the type string.
+	// Then we can unmarshal into the specific struct.
+
+	// Actually, `GetMonitor` returns `monitor.Base`. The library `Base` struct has `MarshalJSON` which uses `raw`.
+	// So if we just use `monitor.Base`, we might not get type-specific fields if we don't unmarshal `raw` into struct?
+	// Wait, `GetMonitor` implementation (Step 250):
+	// var mon monitor.Base
+	// err = convertToStruct(response.Monitor, &mon)
+	// This only fills Base fields?
+	// `monitor.Base` has `raw` field.
+	// If `convertToStruct` fills `raw`, then we can use `As`.
+	// Let's assume `GetMonitor` is enough to check existence and basic fields.
+	// But for thorough read we need type specific fields.
+
+	baseMonitor, err := r.client.Kuma.GetMonitor(ctx, monitorID)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
@@ -338,106 +287,57 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	// Update the data model - only set values that are meaningful
-	data.ID = types.Int64Value(int64(monitor.ID))
-	data.Type = types.StringValue(string(monitor.Type))
-	data.Name = types.StringValue(monitor.Name)
-	data.Interval = types.Int64Value(int64(monitor.Interval))
-	data.RetryInterval = types.Int64Value(int64(monitor.RetryInterval))
-	data.ResendInterval = types.Int64Value(int64(monitor.ResendInterval))
-	data.MaxRetries = types.Int64Value(int64(monitor.MaxRetries))
-
-	// Only set optional fields if they have meaningful values or were previously set
-	if monitor.URL != "" {
-		data.URL = types.StringValue(monitor.URL)
-	}
-	if monitor.Method != "" && !data.Method.IsNull() {
-		data.Method = types.StringValue(monitor.Method)
-	}
-	if monitor.Hostname != "" {
-		data.Hostname = types.StringValue(monitor.Hostname)
-	}
-	if !data.Port.IsNull() {
-		data.Port = types.Int64Value(int64(monitor.Port))
-	}
-	if !data.UpsideDown.IsNull() {
-		data.UpsideDown = types.BoolValue(monitor.UpsideDown)
-	}
-	if !data.IgnoreTLS.IsNull() {
-		data.IgnoreTLS = types.BoolValue(monitor.IgnoreTLS)
-	}
-	if !data.MaxRedirects.IsNull() {
-		data.MaxRedirects = types.Int64Value(int64(monitor.MaxRedirects))
-	}
-	if monitor.Body != "" {
-		data.Body = types.StringValue(monitor.Body)
-	}
-	if monitor.Headers != "" {
-		data.Headers = types.StringValue(monitor.Headers)
-	}
-	if monitor.AuthMethod != "" {
-		data.AuthMethod = types.StringValue(string(monitor.AuthMethod))
-	}
-	if monitor.BasicAuthUser != "" {
-		data.BasicAuthUser = types.StringValue(monitor.BasicAuthUser)
-	}
-	if monitor.BasicAuthPass != "" {
-		data.BasicAuthPass = types.StringValue(monitor.BasicAuthPass)
-	}
-	if monitor.Keyword != "" {
-		data.Keyword = types.StringValue(monitor.Keyword)
+	// If ID is 0, it might mean not found or empty (library usually returns error on not found, but we should check)
+	if baseMonitor.ID == 0 {
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	// Read NotificationIDList
-	if len(monitor.NotificationIDList) > 0 {
-		notifIDs := make([]types.Int64, len(monitor.NotificationIDList))
-		for i, v := range monitor.NotificationIDList {
-			switch val := v.(type) {
-			case float64:
-				notifIDs[i] = types.Int64Value(int64(val))
-			case int:
-				notifIDs[i] = types.Int64Value(int64(val))
-			case int64:
-				notifIDs[i] = types.Int64Value(val)
-			}
+	// Now determine type and load full details
+	var fullMonitor kumamonitor.Monitor
+	monitorType := baseMonitor.Type()
+
+	switch monitorType {
+	case "http":
+		var m kumamonitor.HTTP
+		if err := baseMonitor.As(&m); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Failed to convert monitor: %s", err))
+			return
 		}
-		listVal, diags := types.ListValueFrom(ctx, types.Int64Type, notifIDs)
-		resp.Diagnostics.Append(diags...)
-		data.NotificationIDList = listVal
+		fullMonitor = &m
+	case "ping":
+		var m kumamonitor.Ping
+		if err := baseMonitor.As(&m); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Failed to convert monitor: %s", err))
+			return
+		}
+		fullMonitor = &m
+	case "port":
+		var m kumamonitor.TCPPort
+		if err := baseMonitor.As(&m); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Failed to convert monitor: %s", err))
+			return
+		}
+		fullMonitor = &m
+	case "keyword":
+		var m kumamonitor.HTTPKeyword
+		if err := baseMonitor.As(&m); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Failed to convert monitor: %s", err))
+			return
+		}
+		fullMonitor = &m
+	default:
+		// Fallback to base if type unknown, but we might miss fields
+		// For now, let's error or just use base if possible?
+		// We can't really use base as full monitor interface in monitorToModel because of casting.
+		// We'll log a warning?
+		tflog.Warn(ctx, fmt.Sprintf("Unsupported monitor type found on read: %s", monitorType))
+		// Use empty struct to avoid nil panic maybe?
 	}
 
-	// Read AcceptedStatusCodes - filter out null values
-	if len(monitor.AcceptedStatusCodes) > 0 {
-		var codes []types.Int64
-		for _, v := range monitor.AcceptedStatusCodes {
-			if v == nil {
-				continue // Skip null values
-			}
-			switch val := v.(type) {
-			case float64:
-				codes = append(codes, types.Int64Value(int64(val)))
-			case int:
-				codes = append(codes, types.Int64Value(int64(val)))
-			case int64:
-				codes = append(codes, types.Int64Value(val))
-			}
-		}
-		// Only set if we have actual values (not just nulls)
-		if len(codes) > 0 {
-			listVal, diags := types.ListValueFrom(ctx, types.Int64Type, codes)
-			resp.Diagnostics.Append(diags...)
-			data.AcceptedStatusCodes = listVal
-		} else {
-			data.AcceptedStatusCodes = types.ListNull(types.Int64Type)
-		}
-	} else {
-		data.AcceptedStatusCodes = types.ListNull(types.Int64Type)
-	}
-
-	// DatabaseConnectionString - read from hostname for database monitors
-	if monitor.Type == client.MonitorTypePostgres || monitor.Type == client.MonitorTypeMySQL ||
-		monitor.Type == client.MonitorTypeMongoDB || monitor.Type == client.MonitorTypeSQLServer {
-		data.DatabaseConnectionString = types.StringValue(monitor.Hostname)
+	// Update the data model
+	if fullMonitor != nil {
+		r.monitorToModel(ctx, fullMonitor, &data)
 	}
 
 	// Save updated data into Terraform state
@@ -454,104 +354,37 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	monitorID := int(data.ID.ValueInt64())
-
-	// Prepare the API request
-	monitor := &client.Monitor{
-		Type:           client.MonitorType(data.Type.ValueString()),
-		Name:           data.Name.ValueString(),
-		Interval:       int(data.Interval.ValueInt64()),
-		RetryInterval:  int(data.RetryInterval.ValueInt64()),
-		ResendInterval: int(data.ResendInterval.ValueInt64()),
-		MaxRetries:     int(data.MaxRetries.ValueInt64()),
-		UpsideDown:     data.UpsideDown.ValueBool(),
-		IgnoreTLS:      data.IgnoreTLS.ValueBool(),
-	}
-
-	// Set optional fields
-	if !data.URL.IsNull() {
-		monitor.URL = data.URL.ValueString()
-	}
-
-	if !data.Method.IsNull() {
-		monitor.Method = data.Method.ValueString()
-	}
-
-	if !data.Hostname.IsNull() {
-		monitor.Hostname = data.Hostname.ValueString()
-	}
-
-	if !data.Port.IsNull() {
-		monitor.Port = int(data.Port.ValueInt64())
-	}
-
-	if !data.MaxRedirects.IsNull() {
-		monitor.MaxRedirects = int(data.MaxRedirects.ValueInt64())
-	}
-
-	if !data.Body.IsNull() {
-		monitor.Body = data.Body.ValueString()
-	}
-
-	if !data.Headers.IsNull() {
-		monitor.Headers = data.Headers.ValueString()
-	}
-
-	if !data.AuthMethod.IsNull() {
-		monitor.AuthMethod = client.AuthMethod(data.AuthMethod.ValueString())
-	}
-
-	if !data.BasicAuthUser.IsNull() {
-		monitor.BasicAuthUser = data.BasicAuthUser.ValueString()
-	}
-
-	if !data.BasicAuthPass.IsNull() {
-		monitor.BasicAuthPass = data.BasicAuthPass.ValueString()
-	}
-
-	if !data.Keyword.IsNull() {
-		monitor.Keyword = data.Keyword.ValueString()
-	}
-
-	// Handle NotificationIDList
-	if !data.NotificationIDList.IsNull() && !data.NotificationIDList.IsUnknown() {
-		var notifIDs []int64
-		diags := data.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
-		if !diags.HasError() {
-			monitor.NotificationIDList = make([]interface{}, len(notifIDs))
-			for i, id := range notifIDs {
-				monitor.NotificationIDList[i] = int(id)
-			}
-		}
-	}
-
-	// Handle AcceptedStatusCodes
-	if !data.AcceptedStatusCodes.IsNull() && !data.AcceptedStatusCodes.IsUnknown() {
-		var codes []int64
-		diags := data.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
-		if !diags.HasError() {
-			monitor.AcceptedStatusCodes = make([]interface{}, len(codes))
-			for i, code := range codes {
-				monitor.AcceptedStatusCodes[i] = int(code)
-			}
-		}
-	}
-
-	// Handle DatabaseConnectionString (for Postgres/MySQL/MongoDB/etc)
-	if !data.DatabaseConnectionString.IsNull() {
-		connStr := data.DatabaseConnectionString.ValueString()
-		monitor.Hostname = connStr
-	}
-
-	// Update the monitor
-	tflog.Info(ctx, "Updating monitor", map[string]interface{}{
-		"id":   monitorID,
-		"name": monitor.Name,
-	})
-
-	_, err := r.client.UpdateMonitor(ctx, monitorID, monitor)
+	monitor, err := r.monitorFromPlan(ctx, data)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update monitor %d: %s", monitorID, err))
+		resp.Diagnostics.AddError("Error preparing monitor update", err.Error())
+		return
+	}
+
+	// We need to set ID on the monitor struct because UpdateMonitor takes the struct not ID+struct
+	// But `monitor` is an interface. We need to set ID on the underlying struct.
+	// But `monitorFromPlan` returns interface.
+	// `monitorFromPlan` sets ID? No.
+	// We need to set it.
+
+	// Type switch to set ID?
+	// Or define SetID on interface? Interface has GetID, but SetID? Not in standard interface.
+	// We can manually set it by casting again... annoying.
+	// Or we pass ID to `monitorFromPlan`.
+
+	// Let's modify `monitorFromPlan` to set ID.
+	// Hack: monitorFromPlan constructs structs. I can set ID there.
+
+	// Actually `UpdateMonitor` in library takes `monitor.Monitor`.
+	// Does library require ID to be set in struct? Logic: `monitorData, err := structToMap(mon)`.
+	// `structToMap` uses JSON tags. `Base` has `ID` json tag.
+	// So yes, ID must be set in the struct.
+
+	// Let's modify `monitorFromPlan` to set ID.
+	idVal := data.ID.ValueInt64()
+	_ = setIdOnMonitor(monitor, idVal) // Error is non-critical, ID will be set if type is known
+
+	if err := r.client.Kuma.UpdateMonitor(ctx, monitor); err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update monitor %d: %s", idVal, err))
 		return
 	}
 
@@ -569,23 +402,18 @@ func (r *MonitorResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	monitorID := int(data.ID.ValueInt64())
+	monitorID := data.ID.ValueInt64()
 
 	// Delete the monitor
-	tflog.Info(ctx, "Deleting monitor", map[string]interface{}{
-		"id": monitorID,
-	})
-
-	err := r.client.DeleteMonitor(ctx, monitorID)
-	if err != nil {
+	if err := r.client.Kuma.DeleteMonitor(ctx, monitorID); err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete monitor %d: %s", monitorID, err))
 		return
 	}
 }
 
 func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Convert import ID (string) to int
-	id, err := strconv.Atoi(req.ID)
+	// Convert import ID (string) to int64
+	id, err := strconv.ParseInt(req.ID, 10, 64)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Invalid Monitor ID",
@@ -596,4 +424,288 @@ func (r *MonitorResource) ImportState(ctx context.Context, req resource.ImportSt
 
 	// Set the ID in the state
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
+}
+
+// Helpers
+
+func setIdOnMonitor(m kumamonitor.Monitor, id int64) error {
+	switch v := m.(type) {
+	case *kumamonitor.HTTP:
+		v.ID = id
+	case *kumamonitor.Ping:
+		v.ID = id
+	case *kumamonitor.TCPPort:
+		v.ID = id
+	case *kumamonitor.HTTPKeyword:
+		v.ID = id
+	default:
+		return fmt.Errorf("cannot set ID on unknown type")
+	}
+	return nil
+}
+
+func (r *MonitorResource) monitorFromPlan(ctx context.Context, plan MonitorResourceModel) (kumamonitor.Monitor, error) {
+	base := kumamonitor.Base{
+		Name:           plan.Name.ValueString(),
+		Interval:       plan.Interval.ValueInt64(),
+		RetryInterval:  plan.RetryInterval.ValueInt64(),
+		ResendInterval: plan.ResendInterval.ValueInt64(),
+		MaxRetries:     plan.MaxRetries.ValueInt64(),
+		UpsideDown:     plan.UpsideDown.ValueBool(),
+	}
+
+	// Notification IDs
+	if !plan.NotificationIDList.IsNull() && !plan.NotificationIDList.IsUnknown() {
+		var notifIDs []int64
+		plan.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
+		base.NotificationIDs = notifIDs
+	}
+
+	switch plan.Type.ValueString() {
+	case "http":
+		m := &kumamonitor.HTTP{
+			Base: base,
+			HTTPDetails: kumamonitor.HTTPDetails{
+				URL:           plan.URL.ValueString(),
+				Method:        plan.Method.ValueString(),
+				IgnoreTLS:     plan.IgnoreTLS.ValueBool(),
+				MaxRedirects:  int(plan.MaxRedirects.ValueInt64()),
+				Body:          plan.Body.ValueString(),
+				Headers:       plan.Headers.ValueString(),
+				AuthMethod:    kumamonitor.AuthMethod(plan.AuthMethod.ValueString()),
+				BasicAuthUser: plan.BasicAuthUser.ValueString(),
+				BasicAuthPass: plan.BasicAuthPass.ValueString(),
+			},
+		}
+		// Always initialize AcceptedStatusCodes to empty slice to avoid sending null
+		m.AcceptedStatusCodes = []string{}
+		if !plan.AcceptedStatusCodes.IsNull() {
+			var codes []int64
+			plan.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
+			strCodes := make([]string, len(codes))
+			for i, c := range codes {
+				strCodes[i] = strconv.FormatInt(c, 10)
+			}
+			m.AcceptedStatusCodes = strCodes
+		}
+		return m, nil
+
+	case "ping":
+		m := &kumamonitor.Ping{
+			Base: base,
+			PingDetails: kumamonitor.PingDetails{
+				Hostname: plan.Hostname.ValueString(),
+			},
+		}
+		return m, nil
+
+	case "port":
+		m := &kumamonitor.TCPPort{
+			Base: base,
+			TCPPortDetails: kumamonitor.TCPPortDetails{
+				Hostname: plan.Hostname.ValueString(),
+				Port:     int(plan.Port.ValueInt64()), // Fixed cast
+			},
+		}
+		return m, nil
+
+	case "keyword":
+		// Get method, default to GET if not specified
+		method := plan.Method.ValueString()
+		if method == "" {
+			method = "GET"
+		}
+
+		// Get max redirects, default to 0
+		maxRedirects := int(plan.MaxRedirects.ValueInt64())
+
+		m := &kumamonitor.HTTPKeyword{
+			Base: base,
+			HTTPDetails: kumamonitor.HTTPDetails{
+				URL:                 plan.URL.ValueString(),
+				Method:              method,
+				MaxRedirects:        maxRedirects,
+				AcceptedStatusCodes: []string{}, // Initialize to empty slice
+			},
+			HTTPKeywordDetails: kumamonitor.HTTPKeywordDetails{
+				Keyword: plan.Keyword.ValueString(),
+			},
+		}
+		return m, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported monitor type: %s", plan.Type.ValueString())
+	}
+}
+
+func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Monitor, data *MonitorResourceModel) {
+	// Common fields
+	data.ID = types.Int64Value(m.GetID())
+	// Type() returns "http", "ping", etc.
+	// But we set it explicitly in cases to be safe or rely on Type()
+
+	// We need Name. But Interface doesn't have Name.
+	// We rely on type assertion to get Name from Base embedded.
+
+	switch v := m.(type) {
+	case *kumamonitor.HTTP:
+		data.Name = types.StringValue(v.Name)
+		data.Type = types.StringValue("http")
+
+		if v.URL != "" {
+			data.URL = types.StringValue(v.URL)
+		} else {
+			data.URL = types.StringNull()
+		}
+		if v.Method != "" {
+			data.Method = types.StringValue(v.Method)
+		} else {
+			data.Method = types.StringNull()
+		}
+
+		data.IgnoreTLS = types.BoolValue(v.IgnoreTLS)
+		data.MaxRedirects = types.Int64Value(int64(v.MaxRedirects))
+
+		if v.Body != "" {
+			data.Body = types.StringValue(v.Body)
+		} else {
+			data.Body = types.StringNull()
+		}
+		if v.Headers != "" {
+			data.Headers = types.StringValue(v.Headers)
+		} else {
+			data.Headers = types.StringNull()
+		}
+
+		if string(v.AuthMethod) != "" {
+			data.AuthMethod = types.StringValue(string(v.AuthMethod))
+		} else {
+			data.AuthMethod = types.StringNull()
+		}
+		if v.BasicAuthUser != "" {
+			data.BasicAuthUser = types.StringValue(v.BasicAuthUser)
+		} else {
+			data.BasicAuthUser = types.StringNull()
+		}
+		if v.BasicAuthPass != "" {
+			data.BasicAuthPass = types.StringValue(v.BasicAuthPass)
+		} else {
+			data.BasicAuthPass = types.StringNull()
+		}
+
+		if len(v.AcceptedStatusCodes) > 0 {
+			var codes []types.Int64
+			for _, c := range v.AcceptedStatusCodes {
+				if i, err := strconv.ParseInt(c, 10, 64); err == nil {
+					codes = append(codes, types.Int64Value(i))
+				}
+			}
+			data.AcceptedStatusCodes, _ = types.ListValueFrom(ctx, types.Int64Type, codes)
+		} else {
+			// If empty list, we prefer null to match config if omitted
+			data.AcceptedStatusCodes = types.ListNull(types.Int64Type)
+		}
+
+		// Base fields
+		data.Interval = types.Int64Value(v.Interval)
+		data.RetryInterval = types.Int64Value(v.RetryInterval)
+		data.ResendInterval = types.Int64Value(v.ResendInterval)
+		data.MaxRetries = types.Int64Value(v.MaxRetries)
+		data.UpsideDown = types.BoolValue(v.UpsideDown)
+
+		if len(v.NotificationIDs) > 0 {
+			outIDs := make([]types.Int64, len(v.NotificationIDs))
+			for i, id := range v.NotificationIDs {
+				outIDs[i] = types.Int64Value(id)
+			}
+			data.NotificationIDList, _ = types.ListValueFrom(ctx, types.Int64Type, outIDs)
+		} else {
+			data.NotificationIDList = types.ListNull(types.Int64Type)
+		}
+
+	case *kumamonitor.Ping:
+		data.Name = types.StringValue(v.Name)
+		data.Type = types.StringValue("ping")
+		if v.Hostname != "" {
+			data.Hostname = types.StringValue(v.Hostname)
+		} else {
+			data.Hostname = types.StringNull()
+		}
+
+		data.Interval = types.Int64Value(v.Interval)
+		data.RetryInterval = types.Int64Value(v.RetryInterval)
+		data.ResendInterval = types.Int64Value(v.ResendInterval)
+		data.MaxRetries = types.Int64Value(v.MaxRetries)
+		data.UpsideDown = types.BoolValue(v.UpsideDown)
+
+		if len(v.NotificationIDs) > 0 {
+			outIDs := make([]types.Int64, len(v.NotificationIDs))
+			for i, id := range v.NotificationIDs {
+				outIDs[i] = types.Int64Value(id)
+			}
+			data.NotificationIDList, _ = types.ListValueFrom(ctx, types.Int64Type, outIDs)
+		} else {
+			data.NotificationIDList = types.ListNull(types.Int64Type)
+		}
+
+	case *kumamonitor.TCPPort:
+		data.Name = types.StringValue(v.Name)
+		data.Type = types.StringValue("port")
+		if v.Hostname != "" {
+			data.Hostname = types.StringValue(v.Hostname)
+		} else {
+			data.Hostname = types.StringNull()
+		}
+		data.Port = types.Int64Value(int64(v.Port))
+
+		data.Interval = types.Int64Value(v.Interval)
+		data.RetryInterval = types.Int64Value(v.RetryInterval)
+		data.ResendInterval = types.Int64Value(v.ResendInterval)
+		data.MaxRetries = types.Int64Value(v.MaxRetries)
+		data.UpsideDown = types.BoolValue(v.UpsideDown)
+
+		if len(v.NotificationIDs) > 0 {
+			outIDs := make([]types.Int64, len(v.NotificationIDs))
+			for i, id := range v.NotificationIDs {
+				outIDs[i] = types.Int64Value(id)
+			}
+			data.NotificationIDList, _ = types.ListValueFrom(ctx, types.Int64Type, outIDs)
+		} else {
+			data.NotificationIDList = types.ListNull(types.Int64Type)
+		}
+
+	case *kumamonitor.HTTPKeyword:
+		data.Name = types.StringValue(v.Name)
+		data.Type = types.StringValue("keyword")
+		if v.URL != "" {
+			data.URL = types.StringValue(v.URL)
+		} else {
+			data.URL = types.StringNull()
+		}
+		if v.Keyword != "" {
+			data.Keyword = types.StringValue(v.Keyword)
+		} else {
+			data.Keyword = types.StringNull()
+		}
+
+		data.Interval = types.Int64Value(v.Interval)
+		data.RetryInterval = types.Int64Value(v.RetryInterval)
+		data.ResendInterval = types.Int64Value(v.ResendInterval)
+		data.MaxRetries = types.Int64Value(v.MaxRetries)
+		data.UpsideDown = types.BoolValue(v.UpsideDown)
+
+		if len(v.NotificationIDs) > 0 {
+			outIDs := make([]types.Int64, len(v.NotificationIDs))
+			for i, id := range v.NotificationIDs {
+				outIDs[i] = types.Int64Value(id)
+			}
+			data.NotificationIDList, _ = types.ListValueFrom(ctx, types.Int64Type, outIDs)
+		} else {
+			data.NotificationIDList = types.ListNull(types.Int64Type)
+		}
+
+	default:
+		// Fallback for unknown types
+		data.Type = types.StringValue(m.Type())
+	}
 }

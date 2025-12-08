@@ -2,7 +2,7 @@
 page_title: "uptimekuma Provider"
 subcategory: ""
 description: |-
-  Terraform provider for managing Uptime Kuma resources.
+  Terraform provider for managing Uptime Kuma v2 resources via direct Socket.IO connection.
 ---
 
 # uptimekuma Provider
@@ -11,45 +11,32 @@ This Terraform provider allows you to manage [Uptime Kuma](https://github.com/lo
 
 ## Features
 
-- **Monitors**: Create and manage HTTP, Ping, Port, DNS, Keyword, and other monitor types
+- **Monitors**: Create and manage HTTP, Ping, Port, and Keyword monitor types
 - **Status Pages**: Create and manage status pages with monitor groups and custom domains
+- **Tags**: Create and manage tags for organizing monitors
+- **Direct Socket.IO Connection**: Communicates directly with Uptime Kuma v2 (no middleware required)
 
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- Access to an Uptime Kuma instance (self-hosted or hosted)
-- Uptime Kuma Web API adapter (see setup guide below)
+- Uptime Kuma v2 instance
 
-## Setup Guide for Uptime Kuma Web API
+## Version Compatibility
 
-Uptime Kuma uses WebSocket for its API rather than a traditional REST API. This provider requires the [Uptime Kuma Web API adapter](https://github.com/MedAziz11/Uptime-Kuma-Web-API) to bridge between standard REST calls and Uptime Kuma's WebSocket API.
+| Provider Version | Uptime Kuma Version | Connection Method |
+|------------------|---------------------|-------------------|
+| **v1.0.0+**      | **v2.x**            | Direct Socket.IO  |
+| v0.x (deprecated)| v1.21.3             | HTTP Middleware   |
 
-For a complete setup guide, refer to: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
-
-### ⚠️ Version Compatibility
-
-**Important:** The Uptime Kuma Web API adapter is only compatible with specific versions of Uptime Kuma. Using incompatible versions will result in API errors.
-
-| Uptime Kuma Version | API Adapter Compatibility |
-|---------------------|---------------------------|
-| **1.21.3**          | ✅ Compatible (Recommended) |
-| 1.22.x              | ⚠️ Untested |
-| 1.23.x+             | ❌ Not Compatible |
-
-When using newer versions of Uptime Kuma (1.23.x and above), you may encounter errors like:
-- `request failed with status 500: {"detail":"'version'"}`
-- Various WebSocket API incompatibilities
-
-**We recommend using Uptime Kuma version 1.21.3** for reliable operation with this provider.
+**⚠️ Breaking Change:** Version 1.0.0+ uses direct Socket.IO communication and is only compatible with Uptime Kuma v2. The HTTP middleware adapter is no longer required or supported.
 
 ## Example Usage
 
 ```terraform
 provider "uptimekuma" {
-  base_url = "http://localhost:8000" # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
-  username = "admin"                 # Username for authentication
-  password = "password"              # Password for authentication
-  # insecure_https = true            # Optional: Skip TLS certificate verification
+  base_url = "http://localhost:3001" # Direct Uptime Kuma URL (not middleware)
+  username = "admin"
+  password = "password"
 }
 ```
 
@@ -65,4 +52,3 @@ provider "uptimekuma" {
 ### Optional
 
 - `insecure_https` (Boolean) Skip TLS certificate verification
-

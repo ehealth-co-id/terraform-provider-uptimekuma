@@ -2,35 +2,30 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # Docker Compose setup for local testing of the Terraform provider.
-# Based on: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
 #
 # Usage:
 #   docker compose up -d
 #   
 # First-time setup:
-#   1. Start the containers: docker compose up -d
+#   1. Start the container: docker compose up -d
 #   2. Open http://localhost:3001 in your browser
 #   3. Create an admin account with:
 #      - Username: admin
 #      - Password: admin123
-#   4. Wait a few seconds for the API to connect
+#   4. Wait a few seconds for the server to initialize
 #
 # Then set the following environment variables for testing:
-#   export UPTIMEKUMA_BASE_URL="http://localhost:8000"
+#   export UPTIMEKUMA_BASE_URL="http://localhost:3001"
 #   export UPTIMEKUMA_USERNAME="admin"
 #   export UPTIMEKUMA_PASSWORD="admin123"
 #
 # Run acceptance tests:
 #   TF_ACC=1 go test -v ./internal/provider/
 #
-# Note: The API adapter (medaziz11/uptimekuma_restapi) may timeout on complex
-# operations like status pages with monitor groups. Use version 1.21.3 of
-# Uptime Kuma for best compatibility.
 
 services:
   uptime-kuma:
-    # Using version 1.21.3 which is known to work with the API adapter
-    image: louislam/uptime-kuma:1.21.3
+    image: louislam/uptime-kuma:2
     container_name: uptime-kuma
     volumes:
       - uptime-kuma-data:/app/data
@@ -38,22 +33,5 @@ services:
       - "3001:3001"
     restart: unless-stopped
 
-  uptime-kuma-api:
-    image: medaziz11/uptimekuma_restapi:latest
-    container_name: uptime-kuma-api
-    environment:
-      - KUMA_SERVER=http://uptime-kuma:3001
-      - KUMA_USERNAME=admin
-      - KUMA_PASSWORD=admin123
-      - ADMIN_PASSWORD=admin123
-    volumes:
-      - uptime-kuma-api-data:/db
-    ports:
-      - "8000:8000"
-    depends_on:
-      - uptime-kuma
-    restart: unless-stopped
-
 volumes:
   uptime-kuma-data:
-  uptime-kuma-api-data:

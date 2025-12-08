@@ -6,85 +6,67 @@ This Terraform provider allows you to manage [Uptime Kuma](https://github.com/lo
 
 - **Monitors**: Create and manage HTTP, Ping, Port, DNS, Keyword, and other monitor types
 - **Status Pages**: Create and manage status pages with monitor groups and custom domains
+- **Tags**: Create and manage tags for organizing monitors
+- **Direct Socket.IO Connection**: Communicates directly with Uptime Kuma v2 (no middleware required)
 
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.23
-- Access to an Uptime Kuma instance (self-hosted or hosted)
-- Uptime Kuma Web API adapter (see setup guide below)
+- [Go](https://golang.org/doc/install) >= 1.23 (for development)
+- Uptime Kuma v2 instance
 
-## Setup Guide for Uptime Kuma Web API
+## Version Compatibility
 
-Uptime Kuma uses WebSocket for its API rather than a traditional REST API. This provider requires the [Uptime Kuma Web API adapter](https://github.com/MedAziz11/Uptime-Kuma-Web-API) to bridge between standard REST calls and Uptime Kuma's WebSocket API.
+| Provider Version | Uptime Kuma Version | Connection Method |
+|------------------|---------------------|-------------------|
+| **v1.0.0+**      | **v2.x**            | Direct Socket.IO  |
+| v0.x (deprecated)| v1.21.3             | HTTP Middleware   |
 
-For a complete setup guide, refer to: https://github.com/ehealth-co-id/uptime-kuma-api-starter-pack
+**⚠️ Breaking Change:** Version 1.0.0+ uses direct Socket.IO communication and is only compatible with Uptime Kuma v2. The HTTP middleware adapter is no longer required or supported.
 
-### ⚠️ Version Compatibility
+## Quick Start
 
-**Important:** The Uptime Kuma Web API adapter is only compatible with specific versions of Uptime Kuma. Using incompatible versions will result in API errors.
+### 1. Start Uptime Kuma v2
 
-| Uptime Kuma Version | API Adapter Compatibility |
-|---------------------|---------------------------|
-| **1.21.3**          | ✅ Compatible (Recommended) |
-| 1.22.x              | ⚠️ Untested |
-| 1.23.x+             | ❌ Not Compatible |
-
-When using newer versions of Uptime Kuma (1.23.x and above), you may encounter errors like:
-- `request failed with status 500: {"detail":"'version'"}`
-- Various WebSocket API incompatibilities
-
-**We recommend using Uptime Kuma version 1.21.3** for reliable operation with this provider. The included `docker-compose.yml` is pre-configured with the compatible version.
-
-### Quick Start with Docker Compose
-
-The repository includes a `docker-compose.yml` for local development and testing:
-
-```shell
-# Start Uptime Kuma and API adapter
+```bash
 docker compose up -d
-
-# Open http://localhost:3001 and create an admin account
-# Then set environment variables:
-export UPTIMEKUMA_BASE_URL="http://localhost:8000"
-export UPTIMEKUMA_USERNAME="admin"
-export UPTIMEKUMA_PASSWORD="your-password"
 ```
 
-## Building The Provider
+The included `docker-compose.yml` automatically runs Uptime Kuma v2 on port 3001.
 
-1. Clone the repository
-2. Enter the repository directory
-3. Build the provider using the Go `install` command:
+### 2. Setup Admin Account (First Time Only)
 
-```shell
-go install
+```bash
+# Automated setup using Playwright
+npm install
+node scripts/setup-uptime-kuma.js
+
+# Or manually visit http://localhost:3001 and create admin account
+# Username: admin, Password: admin123
 ```
 
-## Using the provider
-
-Configure the provider in your Terraform configuration:
+### 3. Configure Provider
 
 ```hcl
 terraform {
   required_providers {
     uptimekuma = {
-      source = "ehealth-co-id/uptimekuma"
+      source  = "ehealth-co-id/uptimekuma"
+      version = "~> 1.0"
     }
   }
 }
 
 provider "uptimekuma" {
-  base_url = "http://localhost:8000"  # Your Uptime Kuma Web API adapter URL (not direct Uptime Kuma URL)
-  username = "admin"                  # Username for authentication
-  password = "password"               # Password for authentication
-  # insecure_https = true             # Optional: Skip TLS certificate verification
+  base_url = "http://localhost:3001"  # Direct Uptime Kuma URL
+  username = "admin"
+  password = "admin123"
 }
 
 # Create an HTTP monitor
 resource "uptimekuma_monitor" "website" {
   name           = "Company Website"
-  type           = "http" 
+  type           = "http"
   url            = "https://example.com"
   interval       = 60
   retry_interval = 30
@@ -111,7 +93,19 @@ resource "uptimekuma_status_page" "status" {
 
 See the [examples](./examples/) directory for more detailed examples.
 
-### Resource: uptimekuma_monitor
+## Building The Provider
+
+1. Clone the repository
+2. Enter the repository directory
+3. Build the provider using the Go `install` command:
+
+```shell
+go install
+```
+
+## Resource Documentation
+
+### uptimekuma_monitor
 
 The `uptimekuma_monitor` resource allows you to create and manage monitors in Uptime Kuma.
 
@@ -129,6 +123,8 @@ resource "uptimekuma_monitor" "http_example" {
   max_retries    = 3
   upside_down    = false
   ignore_tls     = false
+  
+  accepted_status_codes = [200, 201]
 }
 
 # Ping Monitor
@@ -156,7 +152,7 @@ resource "uptimekuma_monitor" "port_example" {
 #### Argument Reference
 
 * `name` - (Required) The name of the monitor.
-* `type` - (Required) The type of monitor. Valid values: `http`, `ping`, `port`, `dns`, `keyword`, `grpc-keyword`, `docker`, `push`, `steam`, `gamedig`, `mqtt`, `sqlserver`, `postgres`, `mysql`, `mongodb`, `radius`, `redis`.
+* `type` - (Required) The type of monitor. Valid values: `http`, `ping`, `port`, `keyword`.
 * `interval` - (Optional) The interval in seconds between checks. Default: `60`.
 * `retry_interval` - (Optional) The interval in seconds between retries. Default: `60`.
 * `resend_interval` - (Optional) The interval in seconds for resending notifications. Default: `0`.
@@ -167,12 +163,13 @@ resource "uptimekuma_monitor" "port_example" {
 **HTTP Monitor Arguments:**
 * `url` - (Required for HTTP monitors) The URL to monitor.
 * `method` - (Optional) The HTTP method to use. Default: `GET`.
-* `max_redirects` - (Optional) The maximum number of redirects to follow.
+* `max_redirects` - (Optional) The maximum number of redirects to follow. Default: `0`.
 * `body` - (Optional) The request body for HTTP POST/PUT/PATCH requests.
 * `headers` - (Optional) JSON string of request headers.
 * `auth_method` - (Optional) Authentication method. Valid values: `basic`, `ntlm`, `mtls`.
 * `basic_auth_user` - (Optional) Basic auth username.
 * `basic_auth_pass` - (Optional) Basic auth password.
+* `accepted_status_codes` - (Optional) List of accepted HTTP status codes.
 
 **Ping/Port Monitor Arguments:**
 * `hostname` - (Required for ping/port monitors) The hostname to check.
@@ -182,7 +179,7 @@ resource "uptimekuma_monitor" "port_example" {
 * `url` - (Required for keyword monitors) The URL to search for keywords.
 * `keyword` - (Required for keyword monitors) The keyword to search for.
 
-### Resource: uptimekuma_status_page
+### uptimekuma_status_page
 
 The `uptimekuma_status_page` resource allows you to create and manage status pages in Uptime Kuma.
 
@@ -196,7 +193,6 @@ resource "uptimekuma_status_page" "company_status" {
   theme       = "dark"
   published   = true
   
-  # Group monitors on the status page
   public_group_list = [
     {
       name = "Core Services"
@@ -221,75 +217,67 @@ resource "uptimekuma_status_page" "company_status" {
 * `slug` - (Required) The URL slug for the status page.
 * `title` - (Required) The title of the status page.
 * `description` - (Optional) The description of the status page.
-* `theme` - (Optional) The theme for the status page. Options: `light`, `dark`.
+* `theme` - (Optional) The theme for the status page.
 * `published` - (Optional) Whether the status page is published. Default: `true`.
 * `show_tags` - (Optional) Whether to show tags on the status page. Default: `false`.
 * `domain_name_list` - (Optional) A list of custom domains for the status page.
 * `footer_text` - (Optional) Custom footer text.
 * `custom_css` - (Optional) Custom CSS for the status page.
 * `google_analytics_id` - (Optional) Google Analytics ID.
-* `icon` - (Optional) URL to a custom icon.
+* `icon` - (Optional) URL to a custom icon. Default: `/icon.svg`.
 * `show_powered_by` - (Optional) Whether to show "Powered by Uptime Kuma" text. Default: `true`.
 * `public_group_list` - (Optional) A list of monitor groups to display on the status page.
   * `name` - (Required) The name of the group.
   * `weight` - (Optional) The order/weight of the group.
   * `monitor_list` - (Optional) A list of monitor IDs to include in the group.
 
+### uptimekuma_tag
+
+The `uptimekuma_tag` resource allows you to create and manage tags in Uptime Kuma.
+
+#### Example Usage
+
+```hcl
+resource "uptimekuma_tag" "production" {
+  name  = "production"
+  color = "#00FF00"
+}
+```
+
+#### Argument Reference
+
+* `name` - (Required) The name of the tag.
+* `color` - (Required) The color of the tag in hex format (e.g., `#00FF00`).
+
 ## Developing the Provider
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
 
-### Setting Up Local Environment
-
-1. Clone the repository
-2. Install dependencies: `go mod download`
-
 ### Running Tests
 
-This provider includes both unit tests and acceptance tests.
-
-**Running Unit Tests**
-
-Unit tests run against mock API endpoints and don't require a real Uptime Kuma instance:
-
-```shell
-# Run all unit tests
-go test -v ./...
-
-# Run specific test
-go test -v ./internal/client -run TestClientAuthentication
-
-# Run tests with coverage
-go test -v -cover ./...
-```
-
-**Running Acceptance Tests**
-
-Acceptance tests create real resources on your Uptime Kuma instance. These require an actual Uptime Kuma instance with the API adapter running.
+This provider includes acceptance tests that run against a real Uptime Kuma v2 instance.
 
 ```shell
 # Start the local test environment
 docker compose up -d
 
-# Open http://localhost:3001 and create an admin account (first time only)
-# Username: admin, Password: admin123
+# Setup admin account (first time only)
+node scripts/setup-uptime-kuma.js
 
 # Set required environment variables
 export TF_ACC=1
-export UPTIMEKUMA_BASE_URL="http://localhost:8000"  # API adapter URL, not Uptime Kuma directly
+export UPTIMEKUMA_BASE_URL="http://localhost:3001"
 export UPTIMEKUMA_USERNAME="admin"
 export UPTIMEKUMA_PASSWORD="admin123"
 
 # Run acceptance tests
-go test -v ./internal/provider
+go test -v -p 1 ./internal/provider/
 
 # Clean up when done
 docker compose down -v
 ```
 
 *Note:* Acceptance tests create and destroy real resources. Use with caution on production instances.
-
-For more details on testing, see [TESTING.md](./TESTING.md).
 
 ### Generate Documentation
 
@@ -299,12 +287,23 @@ To generate or update documentation, run:
 make generate
 ```
 
+## Migration from v0.x
+
+If you're upgrading from v0.x:
+
+1. **Remove Middleware**: The HTTP middleware adapter (`uptime-kuma-api`) is no longer needed
+2. **Update Configuration**: Change `base_url` to point directly to Uptime Kuma (e.g., `http://localhost:3001` instead of `http://localhost:8000`)
+3. **Upgrade Uptime Kuma**: Ensure you're running Uptime Kuma v2.x
+4. **Remove `insecure_https`**: This option is no longer supported
+
+See [CHANGELOG.md](./CHANGELOG.md) for complete breaking changes.
+
 ## Architecture
 
-The provider is built using the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework) and follows a clean architecture pattern:
+The provider is built using the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework) and communicates directly with Uptime Kuma via Socket.IO:
 
-1. **Client Layer** (`internal/client/`): API client handling authentication and API calls
-2. **Provider Layer** (`internal/provider/`): Terraform resource and data source implementations
+1. **Client Layer** (`internal/client/`): Socket.IO client wrapper with retry logic
+2. **Provider Layer** (`internal/provider/`): Terraform resource implementations
 
 For more details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
