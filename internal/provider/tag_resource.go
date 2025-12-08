@@ -6,13 +6,16 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	kumatag "github.com/breml/go-uptime-kuma-client/tag"
@@ -60,9 +63,14 @@ func (r *TagResource) Schema(ctx context.Context, req resource.SchemaRequest, re
 				Required:            true,
 			},
 			"color": schema.StringAttribute{
-				MarkdownDescription: "Tag color (hex code or valid CSS color)",
+				MarkdownDescription: "Tag color in hex format (e.g., #FF0000, #00FF00)",
 				Optional:            true,
-				// Default? Library doesn't specify logic but usually UI has default.
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^#([0-9A-Fa-f]{3}){1,2}$`),
+						"must be a valid hex color code (e.g., #FFF or #FFFFFF)",
+					),
+				},
 			},
 		},
 	}

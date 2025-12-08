@@ -9,8 +9,8 @@ resource "uptimekuma_tag" "production" {
   name = "production"
 
   # Color: Tag color in hex format (string, required)
-  # Format: #RRGGBB (e.g., #00FF00 for green)
-  # Used for visual distinction in the UI
+  # Format: #RRGGBB (e.g., #00FF00 for green) or #RGB
+  # Validated to ensure proper hex format
   color = "#00FF00"
 }
 
