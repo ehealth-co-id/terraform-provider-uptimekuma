@@ -527,3 +527,115 @@ resource "uptimekuma_monitor" "tags_test" {
 		os.Getenv("UPTIMEKUMA_PASSWORD"),
 		name, url)
 }
+
+// Test for active attribute - monitors should be created active by default.
+// This tests the fix for the issue where monitors were being created in a disabled state.
+func TestAccMonitorActive(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create monitor without specifying active - should default to true
+			{
+				Config: testAccMonitorActiveConfig("Active Monitor Default", true),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.active_test",
+						tfjsonpath.New("name"),
+						knownvalue.StringExact("Active Monitor Default"),
+					),
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.active_test",
+						tfjsonpath.New("active"),
+						knownvalue.Bool(true),
+					),
+				},
+			},
+			// Update to inactive (paused)
+			{
+				Config: testAccMonitorActiveConfig("Active Monitor Default", false),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.active_test",
+						tfjsonpath.New("active"),
+						knownvalue.Bool(false),
+					),
+				},
+			},
+			// Update back to active
+			{
+				Config: testAccMonitorActiveConfig("Active Monitor Default", true),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.active_test",
+						tfjsonpath.New("active"),
+						knownvalue.Bool(true),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccMonitorActiveConfig(name string, active bool) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_monitor" "active_test" {
+  name     = %[4]q
+  type     = "http"
+  url      = "https://example.com"
+  active   = %[5]t
+  interval = 60
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name, active)
+}
+
+// Test that monitors are created active by default when active is not specified.
+func TestAccMonitorActiveDefault(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccMonitorActiveDefaultConfig("Monitor Active By Default"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.active_default_test",
+						tfjsonpath.New("active"),
+						knownvalue.Bool(true),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccMonitorActiveDefaultConfig(name string) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_monitor" "active_default_test" {
+  name     = %[4]q
+  type     = "http"
+  url      = "https://example.com"
+  interval = 60
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name)
+}

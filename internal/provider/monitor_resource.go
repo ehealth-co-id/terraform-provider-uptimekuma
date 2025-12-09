@@ -43,6 +43,7 @@ type MonitorResourceModel struct {
 	ID                       types.Int64  `tfsdk:"id"`
 	Type                     types.String `tfsdk:"type"`
 	Name                     types.String `tfsdk:"name"`
+	Active                   types.Bool   `tfsdk:"active"`
 	URL                      types.String `tfsdk:"url"`
 	Method                   types.String `tfsdk:"method"`
 	Hostname                 types.String `tfsdk:"hostname"`
@@ -89,6 +90,12 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Monitor name",
 				Required:            true,
+			},
+			"active": schema.BoolAttribute{
+				MarkdownDescription: "Whether the monitor is active (enabled). Defaults to true.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(true),
 			},
 			"url": schema.StringAttribute{
 				MarkdownDescription: "URL to monitor (required for http, keyword monitors)",
@@ -256,6 +263,15 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// Update Terraform state
 	data.ID = types.Int64Value(id)
+
+	// Handle active state (monitors are created active by default, pause if active=false)
+	// The active field in the API create request is not reliable, so we use PauseMonitor/ResumeMonitor
+	if !data.Active.ValueBool() {
+		if err := r.client.Kuma.PauseMonitor(ctx, id); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to pause monitor %d: %s", id, err))
+			return
+		}
+	}
 
 	// Add tags to the monitor (tags are managed separately via AddMonitorTag API)
 	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
@@ -482,6 +498,23 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
+	// Handle active state changes (requires separate API calls)
+	planActive := data.Active.ValueBool()
+	stateActive := stateData.Active.ValueBool()
+	if planActive != stateActive {
+		if planActive {
+			if err := r.client.Kuma.ResumeMonitor(ctx, idVal); err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to resume monitor %d: %s", idVal, err))
+				return
+			}
+		} else {
+			if err := r.client.Kuma.PauseMonitor(ctx, idVal); err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to pause monitor %d: %s", idVal, err))
+				return
+			}
+		}
+	}
+
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -541,6 +574,7 @@ func setIdOnMonitor(m kumamonitor.Monitor, id int64) error {
 func (r *MonitorResource) monitorFromPlan(ctx context.Context, plan MonitorResourceModel) (kumamonitor.Monitor, error) {
 	base := kumamonitor.Base{
 		Name:           plan.Name.ValueString(),
+		IsActive:       plan.Active.ValueBool(),
 		Interval:       plan.Interval.ValueInt64(),
 		RetryInterval:  plan.RetryInterval.ValueInt64(),
 		ResendInterval: plan.ResendInterval.ValueInt64(),
@@ -730,6 +764,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("http")
+		data.Active = types.BoolValue(v.IsActive)
 
 		if v.URL != "" {
 			data.URL = types.StringValue(v.URL)
@@ -806,6 +841,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("ping")
+		data.Active = types.BoolValue(v.IsActive)
 		if v.Hostname != "" {
 			data.Hostname = types.StringValue(v.Hostname)
 		} else {
@@ -832,6 +868,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("port")
+		data.Active = types.BoolValue(v.IsActive)
 		if v.Hostname != "" {
 			data.Hostname = types.StringValue(v.Hostname)
 		} else {
@@ -859,6 +896,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("keyword")
+		data.Active = types.BoolValue(v.IsActive)
 		if v.URL != "" {
 			data.URL = types.StringValue(v.URL)
 		} else {

@@ -216,6 +216,7 @@ resource "uptimekuma_monitor" "multi_tagged_monitor" {
 ### Optional
 
 - `accepted_status_codes` (List of Number) List of accepted HTTP status codes (e.g., [200, 201, 204]). Defaults to all 2xx codes if not specified.
+- `active` (Boolean) Whether the monitor is active (enabled). Defaults to true.
 - `auth_method` (String) Authentication method (basic, ntlm, mtls)
 - `basic_auth_pass` (String, Sensitive) Basic auth password
 - `basic_auth_user` (String) Basic auth username
