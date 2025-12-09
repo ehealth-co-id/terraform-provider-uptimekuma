@@ -132,3 +132,60 @@ resource "uptimekuma_monitor" "http_with_body" {
   # Get IDs from Uptime Kuma notification settings
   # notification_id_list = [1, 2, 3]
 }
+
+# Monitor with Tags Example
+# Tags help organize and categorize monitors for better management
+resource "uptimekuma_tag" "production" {
+  name  = "production"
+  color = "#00FF00"
+}
+
+resource "uptimekuma_tag" "critical" {
+  name  = "critical"
+  color = "#FF0000"
+}
+
+resource "uptimekuma_monitor" "tagged_monitor" {
+  name           = "Production API"
+  type           = "http"
+  url            = "https://api.example.com/health"
+  interval       = 30
+  retry_interval = 10
+  max_retries    = 3
+
+  # Tags: Associate tags with the monitor (list of objects, optional)
+  # Each tag requires tag_id (required) and optional value
+  tags = [
+    {
+      # tag_id: Reference to the tag resource ID (number, required)
+      tag_id = uptimekuma_tag.production.id
+    },
+    {
+      tag_id = uptimekuma_tag.critical.id
+      # value: Optional custom value for this tag association (string, optional)
+      # Useful for adding context like environment name, priority level, etc.
+      value = "high-priority"
+    }
+  ]
+}
+
+# Monitor with Multiple Tags and Values
+resource "uptimekuma_monitor" "multi_tagged_monitor" {
+  name           = "E-commerce Website"
+  type           = "http"
+  url            = "https://shop.example.com"
+  interval       = 60
+  retry_interval = 30
+  max_retries    = 3
+
+  tags = [
+    {
+      tag_id = uptimekuma_tag.production.id
+      value  = "main-store"
+    },
+    {
+      tag_id = uptimekuma_tag.critical.id
+      value  = "revenue-generating"
+    }
+  ]
+}

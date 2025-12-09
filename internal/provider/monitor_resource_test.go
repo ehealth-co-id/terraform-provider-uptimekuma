@@ -467,3 +467,63 @@ resource "uptimekuma_monitor" "keyword_headers_test" {
 		os.Getenv("UPTIMEKUMA_PASSWORD"),
 		name, url, keyword)
 }
+
+// New test for Monitor with Tags.
+func TestAccMonitorWithTags(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccMonitorWithTagsConfig("Monitor With Tags", "https://example.com"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.tags_test",
+						tfjsonpath.New("name"),
+						knownvalue.StringExact("Monitor With Tags"),
+					),
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.tags_test",
+						tfjsonpath.New("tags"),
+						knownvalue.ListExact([]knownvalue.Check{
+							knownvalue.ObjectPartial(map[string]knownvalue.Check{
+								"value": knownvalue.Null(),
+							}),
+						}),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccMonitorWithTagsConfig(name, url string) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_tag" "test_tag" {
+  name  = "Monitor Tag"
+  color = "#FF0000"
+}
+
+resource "uptimekuma_monitor" "tags_test" {
+  name     = %[4]q
+  type     = "http"
+  url      = %[5]q
+  interval = 60
+  tags = [
+    {
+      tag_id = uptimekuma_tag.test_tag.id
+    }
+  ]
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name, url)
+}

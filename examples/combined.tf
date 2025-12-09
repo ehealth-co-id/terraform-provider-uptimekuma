@@ -14,6 +14,27 @@ provider "uptimekuma" {
   password = "password"
 }
 
+# Create tags for organizing monitors
+resource "uptimekuma_tag" "production" {
+  name  = "production"
+  color = "#00FF00"
+}
+
+resource "uptimekuma_tag" "staging" {
+  name  = "staging"
+  color = "#FFA500"
+}
+
+resource "uptimekuma_tag" "critical" {
+  name  = "critical"
+  color = "#FF0000"
+}
+
+resource "uptimekuma_tag" "infrastructure" {
+  name  = "infrastructure"
+  color = "#0066CC"
+}
+
 # Create HTTP monitors for different services
 resource "uptimekuma_monitor" "website" {
   name           = "Company Website"
@@ -22,6 +43,17 @@ resource "uptimekuma_monitor" "website" {
   interval       = 60
   retry_interval = 30
   max_retries    = 3
+
+  # Tag the website monitor as production and critical
+  tags = [
+    {
+      tag_id = uptimekuma_tag.production.id
+    },
+    {
+      tag_id = uptimekuma_tag.critical.id
+      value  = "high-priority"
+    }
+  ]
 }
 
 resource "uptimekuma_monitor" "api" {
@@ -36,6 +68,31 @@ resource "uptimekuma_monitor" "api" {
 
   # Optional: Custom headers for API auth
   headers = "{\"X-API-Key\":\"dummy-key\", \"Accept\":\"application/json\"}"
+
+  # Tag the API as production
+  tags = [
+    {
+      tag_id = uptimekuma_tag.production.id
+    }
+  ]
+}
+
+resource "uptimekuma_monitor" "staging_api" {
+  name           = "Staging API"
+  type           = "http"
+  url            = "https://staging-api.example.com/health"
+  method         = "GET"
+  interval       = 60
+  retry_interval = 30
+  max_retries    = 2
+
+  # Tag as staging environment
+  tags = [
+    {
+      tag_id = uptimekuma_tag.staging.id
+      value  = "v2-testing"
+    }
+  ]
 }
 
 resource "uptimekuma_monitor" "database" {
@@ -45,6 +102,17 @@ resource "uptimekuma_monitor" "database" {
   interval       = 60
   retry_interval = 30
   max_retries    = 2
+
+  # Tag as infrastructure and critical
+  tags = [
+    {
+      tag_id = uptimekuma_tag.infrastructure.id
+    },
+    {
+      tag_id = uptimekuma_tag.critical.id
+      value  = "database"
+    }
+  ]
 }
 
 # Create a status page with all monitors
@@ -65,7 +133,7 @@ resource "uptimekuma_status_page" "main_status" {
     {
       name         = "API Services"
       weight       = 2
-      monitor_list = [uptimekuma_monitor.api.id]
+      monitor_list = [uptimekuma_monitor.api.id, uptimekuma_monitor.staging_api.id]
     },
     {
       name         = "Infrastructure"

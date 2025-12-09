@@ -33,7 +33,7 @@ provider "uptimekuma" {
 ## Examples
 
 ### Combined Example
-[`combined.tf`](./combined.tf) - Complete example showing all resources working together
+[`combined.tf`](./combined.tf) - Complete example showing all resources working together including tags
 
 ### Provider Configuration
 [`provider/provider.tf`](./provider/provider.tf) - Basic provider configuration
@@ -48,6 +48,7 @@ Examples of different monitor types:
 - **Ping Monitor** - ICMP ping monitoring
 - **Port Monitor** - TCP port availability checks
 - **Keyword Monitor** - Search for keywords in HTTP responses
+- **Tagged Monitor** - Monitor with tags for organization
 
 #### Status Page Resource
 [`resources/uptimekuma_status_page/resource.tf`](./resources/uptimekuma_status_page/resource.tf)
@@ -67,7 +68,7 @@ Create and manage tags for organizing monitors:
 
 ## Usage Patterns
 
-### Creating a Complete Monitoring Setup
+### Creating a Complete Monitoring Setup with Tags
 
 ```hcl
 # 1. Create tags for organization
@@ -76,12 +77,28 @@ resource "uptimekuma_tag" "production" {
   color = "#00FF00"
 }
 
-# 2. Create monitors
+resource "uptimekuma_tag" "critical" {
+  name  = "critical"
+  color = "#FF0000"
+}
+
+# 2. Create monitors with tags
 resource "uptimekuma_monitor" "api" {
   name     = "API Service"
   type     = "http"
   url      = "https://api.example.com/health"
   interval = 60
+
+  # Associate tags with the monitor
+  tags = [
+    {
+      tag_id = uptimekuma_tag.production.id
+    },
+    {
+      tag_id = uptimekuma_tag.critical.id
+      value  = "high-priority"  # Optional value for context
+    }
+  ]
 }
 
 # 3. Create a status page
@@ -95,6 +112,73 @@ resource "uptimekuma_status_page" "main" {
       weight       = 1
       monitor_list = [uptimekuma_monitor.api.id]
     }
+  ]
+}
+```
+
+### Using Tags for Environment Organization
+
+```hcl
+# Environment tags
+resource "uptimekuma_tag" "prod" {
+  name  = "prod"
+  color = "#00FF00"
+}
+
+resource "uptimekuma_tag" "staging" {
+  name  = "staging"
+  color = "#FFA500"
+}
+
+resource "uptimekuma_tag" "dev" {
+  name  = "dev"
+  color = "#808080"
+}
+
+# Production monitor
+resource "uptimekuma_monitor" "prod_api" {
+  name = "Production API"
+  type = "http"
+  url  = "https://api.example.com"
+
+  tags = [
+    { tag_id = uptimekuma_tag.prod.id }
+  ]
+}
+
+# Staging monitor
+resource "uptimekuma_monitor" "staging_api" {
+  name = "Staging API"
+  type = "http"
+  url  = "https://staging.api.example.com"
+
+  tags = [
+    { tag_id = uptimekuma_tag.staging.id, value = "v2-testing" }
+  ]
+}
+```
+
+### Using Tags with Values for Custom Metadata
+
+```hcl
+resource "uptimekuma_tag" "team" {
+  name  = "team"
+  color = "#0066CC"
+}
+
+resource "uptimekuma_tag" "sla" {
+  name  = "sla"
+  color = "#9933FF"
+}
+
+resource "uptimekuma_monitor" "payment_api" {
+  name = "Payment API"
+  type = "http"
+  url  = "https://payment.example.com/health"
+
+  tags = [
+    { tag_id = uptimekuma_tag.team.id, value = "payments-team" },
+    { tag_id = uptimekuma_tag.sla.id, value = "99.99%" }
   ]
 }
 ```

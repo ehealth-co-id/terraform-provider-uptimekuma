@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -20,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	kumamonitor "github.com/breml/go-uptime-kuma-client/monitor"
+	"github.com/breml/go-uptime-kuma-client/tag"
 	"github.com/ehealth-co-id/terraform-provider-uptimekuma/internal/client"
 )
 
@@ -61,6 +63,7 @@ type MonitorResourceModel struct {
 	NotificationIDList       types.List   `tfsdk:"notification_id_list"`
 	AcceptedStatusCodes      types.List   `tfsdk:"accepted_status_codes"`
 	DatabaseConnectionString types.String `tfsdk:"database_connection_string"`
+	Tags                     types.List   `tfsdk:"tags"`
 }
 
 func (r *MonitorResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -187,6 +190,22 @@ func (r *MonitorResource) Schema(ctx context.Context, req resource.SchemaRequest
 				Optional:            true,
 				Sensitive:           true,
 			},
+			"tags": schema.ListNestedAttribute{
+				MarkdownDescription: "Tags associated with the monitor",
+				Optional:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"tag_id": schema.Int64Attribute{
+							MarkdownDescription: "Tag ID",
+							Required:            true,
+						},
+						"value": schema.StringAttribute{
+							MarkdownDescription: "Value for the tag",
+							Optional:            true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -237,6 +256,29 @@ func (r *MonitorResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// Update Terraform state
 	data.ID = types.Int64Value(id)
+
+	// Add tags to the monitor (tags are managed separately via AddMonitorTag API)
+	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
+		type tagModel struct {
+			TagID types.Int64  `tfsdk:"tag_id"`
+			Value types.String `tfsdk:"value"`
+		}
+		var tfTags []tagModel
+		data.Tags.ElementsAs(ctx, &tfTags, false)
+
+		for _, t := range tfTags {
+			tagID := t.TagID.ValueInt64()
+			value := ""
+			if !t.Value.IsNull() {
+				value = t.Value.ValueString()
+			}
+			_, err := r.client.Kuma.AddMonitorTag(ctx, tagID, id, value)
+			if err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to add tag %d to monitor %d: %s", tagID, id, err))
+				return
+			}
+		}
+	}
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -346,9 +388,11 @@ func (r *MonitorResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data MonitorResourceModel
+	var stateData MonitorResourceModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &stateData)...)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -360,32 +404,82 @@ func (r *MonitorResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	// We need to set ID on the monitor struct because UpdateMonitor takes the struct not ID+struct
-	// But `monitor` is an interface. We need to set ID on the underlying struct.
-	// But `monitorFromPlan` returns interface.
-	// `monitorFromPlan` sets ID? No.
-	// We need to set it.
-
-	// Type switch to set ID?
-	// Or define SetID on interface? Interface has GetID, but SetID? Not in standard interface.
-	// We can manually set it by casting again... annoying.
-	// Or we pass ID to `monitorFromPlan`.
-
-	// Let's modify `monitorFromPlan` to set ID.
-	// Hack: monitorFromPlan constructs structs. I can set ID there.
-
-	// Actually `UpdateMonitor` in library takes `monitor.Monitor`.
-	// Does library require ID to be set in struct? Logic: `monitorData, err := structToMap(mon)`.
-	// `structToMap` uses JSON tags. `Base` has `ID` json tag.
-	// So yes, ID must be set in the struct.
-
-	// Let's modify `monitorFromPlan` to set ID.
 	idVal := data.ID.ValueInt64()
 	_ = setIdOnMonitor(monitor, idVal) // Error is non-critical, ID will be set if type is known
 
 	if err := r.client.Kuma.UpdateMonitor(ctx, monitor); err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update monitor %d: %s", idVal, err))
 		return
+	}
+
+	// Handle tag updates (tags are managed separately via AddMonitorTag/DeleteMonitorTag API)
+	type tagModel struct {
+		TagID types.Int64  `tfsdk:"tag_id"`
+		Value types.String `tfsdk:"value"`
+	}
+
+	// Get current state tags
+	var stateTags []tagModel
+	if !stateData.Tags.IsNull() && !stateData.Tags.IsUnknown() {
+		stateData.Tags.ElementsAs(ctx, &stateTags, false)
+	}
+
+	// Get planned tags
+	var planTags []tagModel
+	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
+		data.Tags.ElementsAs(ctx, &planTags, false)
+	}
+
+	// Build maps for comparison
+	stateTagMap := make(map[int64]string)
+	for _, t := range stateTags {
+		value := ""
+		if !t.Value.IsNull() {
+			value = t.Value.ValueString()
+		}
+		stateTagMap[t.TagID.ValueInt64()] = value
+	}
+
+	planTagMap := make(map[int64]string)
+	for _, t := range planTags {
+		value := ""
+		if !t.Value.IsNull() {
+			value = t.Value.ValueString()
+		}
+		planTagMap[t.TagID.ValueInt64()] = value
+	}
+
+	// Remove tags that are in state but not in plan
+	for tagID, value := range stateTagMap {
+		if _, exists := planTagMap[tagID]; !exists {
+			if err := r.client.Kuma.DeleteMonitorTagWithValue(ctx, tagID, idVal, value); err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to remove tag %d from monitor %d: %s", tagID, idVal, err))
+				return
+			}
+		}
+	}
+
+	// Add or update tags that are in plan
+	for tagID, planValue := range planTagMap {
+		if stateValue, exists := stateTagMap[tagID]; !exists {
+			// Tag doesn't exist, add it
+			_, err := r.client.Kuma.AddMonitorTag(ctx, tagID, idVal, planValue)
+			if err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to add tag %d to monitor %d: %s", tagID, idVal, err))
+				return
+			}
+		} else if stateValue != planValue {
+			// Tag exists but value changed, delete old and add new
+			if err := r.client.Kuma.DeleteMonitorTagWithValue(ctx, tagID, idVal, stateValue); err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to remove old tag value for tag %d from monitor %d: %s", tagID, idVal, err))
+				return
+			}
+			_, err := r.client.Kuma.AddMonitorTag(ctx, tagID, idVal, planValue)
+			if err != nil {
+				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to add tag %d to monitor %d: %s", tagID, idVal, err))
+				return
+			}
+		}
 	}
 
 	// Save updated data into Terraform state
@@ -459,6 +553,28 @@ func (r *MonitorResource) monitorFromPlan(ctx context.Context, plan MonitorResou
 		var notifIDs []int64
 		plan.NotificationIDList.ElementsAs(ctx, &notifIDs, false)
 		base.NotificationIDs = notifIDs
+	}
+
+	// Tags
+	if !plan.Tags.IsNull() && !plan.Tags.IsUnknown() {
+		type tagModel struct {
+			TagID types.Int64  `tfsdk:"tag_id"`
+			Value types.String `tfsdk:"value"`
+		}
+		var tfTags []tagModel
+		plan.Tags.ElementsAs(ctx, &tfTags, false)
+
+		var tags []tag.MonitorTag
+		for _, t := range tfTags {
+			mt := tag.MonitorTag{
+				TagID: t.TagID.ValueInt64(),
+			}
+			if !t.Value.IsNull() {
+				mt.Value = t.Value.ValueString()
+			}
+			tags = append(tags, mt)
+		}
+		base.Tags = tags
 	}
 
 	switch plan.Type.ValueString() {
@@ -561,14 +677,57 @@ func (r *MonitorResource) monitorFromPlan(ctx context.Context, plan MonitorResou
 func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Monitor, data *MonitorResourceModel) {
 	// Common fields
 	data.ID = types.Int64Value(m.GetID())
-	// Type() returns "http", "ping", etc.
-	// But we set it explicitly in cases to be safe or rely on Type()
 
-	// We need Name. But Interface doesn't have Name.
-	// We rely on type assertion to get Name from Base embedded.
+	// Helper for tags
+	mapTags := func(tags []tag.MonitorTag) {
+		if len(tags) > 0 {
+			type tagModel struct {
+				TagID types.Int64  `tfsdk:"tag_id"`
+				Value types.String `tfsdk:"value"`
+			}
+			var tfTags []tagModel
+			for _, t := range tags {
+				tm := tagModel{
+					TagID: types.Int64Value(t.TagID),
+				}
+				if t.Value != "" {
+					tm.Value = types.StringValue(t.Value)
+				} else {
+					tm.Value = types.StringNull()
+				}
+				tfTags = append(tfTags, tm)
+			}
+			// Use struct to define element type implies ObjectType.
+			// We need to match the schema. Schema is ListNestedAttribute.
+			// ListValueFrom with struct slice works for ListNestedAttribute?
+			// usually yes if elements match.
+			// Actually ListValueFrom takes `elemType` which is `types.Type`.
+			// For nested attribute, it's `types.ObjectType`.
+			// But creating ObjectType manually is verbose.
+			// New approach: Use `types.ListValueFrom` with `types.ObjectType`.
+
+			objType := types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"tag_id": types.Int64Type,
+					"value":  types.StringType,
+				},
+			}
+
+			data.Tags, _ = types.ListValueFrom(ctx, objType, tfTags)
+		} else {
+			elemType := types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"tag_id": types.Int64Type,
+					"value":  types.StringType,
+				},
+			}
+			data.Tags = types.ListNull(elemType)
+		}
+	}
 
 	switch v := m.(type) {
 	case *kumamonitor.HTTP:
+		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("http")
 
@@ -644,6 +803,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		}
 
 	case *kumamonitor.Ping:
+		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("ping")
 		if v.Hostname != "" {
@@ -669,6 +829,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		}
 
 	case *kumamonitor.TCPPort:
+		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("port")
 		if v.Hostname != "" {
@@ -695,6 +856,7 @@ func (r *MonitorResource) monitorToModel(ctx context.Context, m kumamonitor.Moni
 		}
 
 	case *kumamonitor.HTTPKeyword:
+		mapTags(v.Tags)
 		data.Name = types.StringValue(v.Name)
 		data.Type = types.StringValue("keyword")
 		if v.URL != "" {
