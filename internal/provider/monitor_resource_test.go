@@ -417,3 +417,53 @@ resource "uptimekuma_monitor" "upside_down_test" {
 		os.Getenv("UPTIMEKUMA_PASSWORD"),
 		name, upsideDown)
 }
+
+// New test for Keyword monitor with custom headers.
+func TestAccKeywordMonitorWithHeaders(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeywordMonitorWithHeadersConfig("Keyword With Headers", "https://example.com", "Example Domain"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.keyword_headers_test",
+						tfjsonpath.New("name"),
+						knownvalue.StringExact("Keyword With Headers"),
+					),
+					statecheck.ExpectKnownValue(
+						"uptimekuma_monitor.keyword_headers_test",
+						tfjsonpath.New("headers"),
+						knownvalue.StringExact("{\"User-Agent\": \"Test Agent\"}"),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccKeywordMonitorWithHeadersConfig(name, url, keyword string) string {
+	return fmt.Sprintf(`
+provider "uptimekuma" {
+  base_url = "%s"
+  username = "%s"
+  password = "%s"
+}
+
+resource "uptimekuma_monitor" "keyword_headers_test" {
+  name        = %[4]q
+  type        = "keyword"
+  url         = %[5]q
+  method      = "GET"
+  keyword     = %[6]q
+  headers     = "{\"User-Agent\": \"Test Agent\"}"
+  interval    = 60
+  max_retries = 2
+}
+`,
+		os.Getenv("UPTIMEKUMA_BASE_URL"),
+		os.Getenv("UPTIMEKUMA_USERNAME"),
+		os.Getenv("UPTIMEKUMA_PASSWORD"),
+		name, url, keyword)
+}

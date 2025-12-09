@@ -519,14 +519,34 @@ func (r *MonitorResource) monitorFromPlan(ctx context.Context, plan MonitorResou
 		// Get max redirects, default to 0
 		maxRedirects := int(plan.MaxRedirects.ValueInt64())
 
+		// Map HTTP details
+		httpDetails := kumamonitor.HTTPDetails{
+			URL:           plan.URL.ValueString(),
+			Method:        method,
+			MaxRedirects:  maxRedirects,
+			Body:          plan.Body.ValueString(),
+			Headers:       plan.Headers.ValueString(),
+			AuthMethod:    kumamonitor.AuthMethod(plan.AuthMethod.ValueString()),
+			BasicAuthUser: plan.BasicAuthUser.ValueString(),
+			BasicAuthPass: plan.BasicAuthPass.ValueString(),
+			IgnoreTLS:     plan.IgnoreTLS.ValueBool(),
+		}
+
+		// Handle AcceptedStatusCodes
+		httpDetails.AcceptedStatusCodes = []string{}
+		if !plan.AcceptedStatusCodes.IsNull() {
+			var codes []int64
+			plan.AcceptedStatusCodes.ElementsAs(ctx, &codes, false)
+			strCodes := make([]string, len(codes))
+			for i, c := range codes {
+				strCodes[i] = strconv.FormatInt(c, 10)
+			}
+			httpDetails.AcceptedStatusCodes = strCodes
+		}
+
 		m := &kumamonitor.HTTPKeyword{
-			Base: base,
-			HTTPDetails: kumamonitor.HTTPDetails{
-				URL:                 plan.URL.ValueString(),
-				Method:              method,
-				MaxRedirects:        maxRedirects,
-				AcceptedStatusCodes: []string{}, // Initialize to empty slice
-			},
+			Base:        base,
+			HTTPDetails: httpDetails,
 			HTTPKeywordDetails: kumamonitor.HTTPKeywordDetails{
 				Keyword: plan.Keyword.ValueString(),
 			},
